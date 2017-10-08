@@ -24,9 +24,17 @@ using namespace std;
 
 namespace E
 {
-
+// 
 map<int, struct sockaddr_in *> addr_map;
 map<int, struct sock_arg *> arg_map;
+// waiting states
+map<int, struct TCP_Header *> totalRequest_map;
+map<int, struct TCP_Header *> pending_map;
+map<int, struct TCP_Header *> established_map;
+// check listen 
+unsigned int LST : 1 = 0;
+int backlog;
+
 
 TCPAssignment::TCPAssignment(Host* host) : HostModule("TCP", host),
 		NetworkModule(this->getHostModuleName(), host->getNetworkSystem()),
@@ -73,7 +81,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
 		//		static_cast<struct sockaddr*>(param.param2_ptr), (socklen_t)param.param3_int);
 		break;
 	case LISTEN:
-		//this->syscall_listen(syscallUUID, pid, param.param1_int, param.param2_int);
+		this->syscall_listen(syscallUUID, pid, param.param1_int, param.param2_int);
 		break;
 	case ACCEPT:
 		//this->syscall_accept(syscallUUID, pid, param.param1_int,
@@ -220,6 +228,18 @@ void TCPAssignment::syscall_getsockname(UUID syscallUUID, int pid, int param1,
 		this->returnSystemCall(syscallUUID, 0);
 	}
 }
+// KENS2
+// listen()
+void TCPAssignment::syscall_listen(UUID syscallUUID, int pid, int fd, int bl)
+{
+	// set listen flag to 1
+	LST = 1;
+	// set backlog
+	backlog = bl;
+
+	this->returnSystemCall(syscallUUID, 0);
+}
+
 
 void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 {
