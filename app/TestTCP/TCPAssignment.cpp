@@ -18,22 +18,22 @@
 // 20150547 Lee Sangmin
 // 20160140 Kim Yoonseo,
 
-// example
-
 using namespace std;
 
 namespace E
 {
-// 
-map<int, struct sockaddr_in *> addr_map;
-map<int, struct sock_arg *> arg_map;
+
+map<uint64_t, struct socket_info *> socket_info_map;
 // waiting states
-map<int, struct TCP_Header *> totalRequest_map;
-map<int, struct TCP_Header *> pending_map;
-map<int, struct TCP_Header *> established_map;
-// check listen 
-unsigned int LST = 0;
-int backlog;
+
+const unsigned char FIN = 0x1;
+const unsigned char SYN = 0x2;
+const unsigned char RST = 0x4;
+const unsigned char PSH = 0x8;
+const unsigned char ACK = 0x10;
+const unsigned char URG = 0x20;
+const unsigned char ECE = 0x40;
+const unsigned char CWR = 0x80;
 
 
 TCPAssignment::TCPAssignment(Host* host) : HostModule("TCP", host),
@@ -84,9 +84,9 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
 		this->syscall_listen(syscallUUID, pid, param.param1_int, param.param2_int);
 		break;
 	case ACCEPT:
-		//this->syscall_accept(syscallUUID, pid, param.param1_int,
-		//		static_cast<struct sockaddr*>(param.param2_ptr),
-		//		static_cast<socklen_t*>(param.param3_ptr));
+		this->syscall_accept(syscallUUID, pid, param.param1_int,
+				static_cast<struct sockaddr*>(param.param2_ptr),
+				static_cast<socklen_t*>(param.param3_ptr));
 		break;
 	case BIND:
 		this->syscall_bind(syscallUUID, pid, param.param1_int,
@@ -113,11 +113,12 @@ void TCPAssignment::syscall_socket(UUID syscallUUID, int pid, int param1, int pa
 {
 	// file descriptor
 	int fd = this->createFileDescriptor(pid);
-	// initialize arguments in struct sock_arg
-	struct sock_arg *args = new struct sock_arg;
-	args->family = param1;
-	args->type = param2;
-	arg_map.insert(pair<int, struct sock_arg *>(fd, args));
+	// initialize arguments in struct socket_info
+	uint64_t key = makePidFdKey(pid, fd);
+	struct socket_info *info = new struct socket_info;
+	info->family = param1;
+	info->type = param2;
+	socket_info_map.insert(pair<uint64_t, struct socket_info *>(key, info));
 
 	this->returnSystemCall(syscallUUID, fd);
 }
@@ -128,19 +129,15 @@ void TCPAssignment::syscall_close(UUID syscallUUID, int pid, int param1)
 	int fd = param1;
 	// remove file descriptor 
 	this->removeFileDescriptor(pid, fd);
+	uint64_t key = makePidFdKey(pid, fd);
 	// remove value with key fd in arg_map and addr_map
-	if (arg_map.find(fd) == arg_map.end()) {
+	if (socket_info_map.find(key) == socket_info_map.end()) {
 		// fail 
 		this->returnSystemCall(syscallUUID, -1);
-	} else if (addr_map.find(fd) == addr_map.end()) {
-		delete arg_map.find(fd)->second;
-		arg_map.erase(arg_map.find(fd));
-		this->returnSystemCall(syscallUUID, 0);
 	} else {
-		delete arg_map.find(fd)->second;
-		delete addr_map.find(fd)->second;
-		arg_map.erase(arg_map.find(fd));
-		addr_map.erase(addr_map.find(fd));
+
+		delete socket_info_map.find(fd)->second;
+		socket_info_map.erase(socket_info_map.find(fd));
 		this->returnSystemCall(syscallUUID, 0);
 	}
 
@@ -163,24 +160,24 @@ void TCPAssignment::syscall_bind(UUID syscallUUID, int pid, int param1,
 	*/
 	// param1 is file descriptor
 	int fd = param1;
+	uint64_t key = makePidFdKey(pid, fd);
 	// change sockaddr to sockaddr_in
 	struct sockaddr_in* addr_in = (struct sockaddr_in *) addr;
+	map<uint64_t, struct socket_info *>::iterator iter;
+	iter = socket_info_map.find(key); 
 
-	if (arg_map.find(fd) == arg_map.end() || len < sizeof(struct sockaddr*)) {
+	if (iter == socket_info_map.end() || len < sizeof(struct sockaddr*)) {
 		// fail if socket fd is not exist in arg_map
 		this->returnSystemCall(syscallUUID, -1);
-	} else if (addr_map.find(fd) == addr_map.end()) {
+	} else if (!(iter->second->isBound)) {
 		// check overlap 
 		if (this->checkOverlap(addr_in) < 0) {
 			// if address overlaps
 			this->returnSystemCall(syscallUUID, -1);
 		} else {
-			// there's no fd in addr_map
-			struct sockaddr_in *address = new struct sockaddr_in;
-			*address = *addr_in;
-			// for checking
-			// cout << "port: " << ntohs(address->sin_port) << " ip: " << address->sin_addr.s_addr << "\n";
-			addr_map.insert(pair<int, struct sockaddr_in *>(fd, address));
+			iter->second->srcIP = addr_in->sin_addr.s_addr;
+			iter->second->srcPort = addr_in->sin_port;
+			iter->second->isBound = true;
 			this->returnSystemCall(syscallUUID, 0);
 		}
 	} else {
@@ -192,16 +189,16 @@ void TCPAssignment::syscall_bind(UUID syscallUUID, int pid, int param1,
 int TCPAssignment::checkOverlap(struct sockaddr_in* addr)
 {
 	struct sockaddr_in * addr_in = (struct sockaddr_in *) addr;
-	map<int, struct sockaddr_in *>::iterator iter;
+	map<uint64_t, struct socket_info *>::iterator iter;
 	// check for all addresses in addr_map
-	for (iter = addr_map.begin(); iter != addr_map.end(); iter++) {
-		struct sockaddr_in* temp = iter->second;
-		if (addr_in->sin_port == temp->sin_port) {
+	for (iter = socket_info_map.begin(); iter != socket_info_map.end(); iter++) {
+		
+		if (addr_in->sin_port == iter->second->srcPort) {
 			if (addr_in->sin_addr.s_addr == 0) {
 				return -1;
-			} else if (temp->sin_addr.s_addr == 0) {
+			} else if (iter->second->srcIP == 0) {
 				return -1;
-			} else if (addr_in->sin_addr.s_addr == temp->sin_addr.s_addr) {
+			} else if (addr_in->sin_addr.s_addr == iter->second->srcIP) {
 				return -1;
 			}
 			
@@ -216,15 +213,22 @@ void TCPAssignment::syscall_getsockname(UUID syscallUUID, int pid, int param1,
 {
 	// param1 is file descriptor
 	int fd = param1;
+	uint64_t key = makePidFdKey(pid, fd);
 	// change sockaddr to sockaddr_in
 	struct sockaddr_in* addr_in = (struct sockaddr_in *) addr;
+	map<uint64_t, struct socket_info *>::iterator iter;
+	iter = socket_info_map.find(key);
 	// get socket 
-	if (addr_map.find(fd) == addr_map.end() || *len < sizeof(struct sockaddr)) {
+	if (iter == socket_info_map.end() || *len < sizeof(struct sockaddr)) {
 		this->returnSystemCall(syscallUUID, -1);
 	} else {
 		// get from addr_map
-		struct sockaddr_in* get_addr_in = addr_map.find(fd)->second;
-		memcpy(addr_in, get_addr_in, *len);
+		struct sockaddr_in get_addr_in;
+		get_addr_in.sin_family = iter->second->family;
+		get_addr_in.sin_addr.s_addr = iter->second->srcIP;
+		get_addr_in.sin_port = iter->second->srcPort;
+		
+		memcpy(addr_in, &get_addr_in, *len);
 		this->returnSystemCall(syscallUUID, 0);
 	}
 }
@@ -232,12 +236,14 @@ void TCPAssignment::syscall_getsockname(UUID syscallUUID, int pid, int param1,
 // listen()
 void TCPAssignment::syscall_listen(UUID syscallUUID, int pid, int fd, int bl)
 {
+	/*
 	// set listen flag to 1
 	LST = 1;
 	// set backlog
 	backlog = bl;
 
 	this->returnSystemCall(syscallUUID, 0);
+	*/
 }
 
 void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int param1, struct sockaddr* addr, socklen_t len)
@@ -249,6 +255,15 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int param1, struc
 
     struct in_addr dest_ip = addr_in->sin_addr.s_addr;
     uint16_t dest_port = addr_in->sin_port;
+
+    uint64_t key = makePidFdKey(pid, param1);
+    map<uint64_t, struct socket_info *>::iterator iter;
+
+    iter = socket_info_map.find(key);
+
+    if(iter == socket_info_map.end()) {
+        this->returnSystemCall(syscallUUID, -1);
+    }
 
     if(addr_map.find(param1) == addr_map.end()) {
         //if not bound
@@ -262,22 +277,63 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int param1, struc
         source_port = addr_map.find(param1)->sin_port;
     }
 
-    int interface = getRoutingTable(&dest_ip);
+    iter->second->destIP = dest_ip;
+    iter->second->destPort = dest_port;
+    iter->second->srcIP = source_ip;
+    iter->second->srcPort = source_port;
+    iter->second->isBound = true;
 
-    getIPAddr(&source_ip, interface);
+    Packet *myPacket = allocatePacket(54);
+    struct TCP_Header TCPHeader;
 
+    TCPHeader->sourcePort = source_port;
+    TCPHeader->destinationPort = dest_port;
+    TCPHeader->sequenceNumber = htonl(rand() % 0xFFFFFFFF);
+    TCPHeader->acknowledgeNumber = htonl(0);
+    TCPHeader->flags = SYN;
+    TCPHeader->windowSize = htons(51200);
+    //TCPHeader->checksum = checksum;
+
+    myPacket->writeData(14+12, &source_ip, 4);
+    myPacket->writeData(14+12, &dest_ip, 4);
+    mypacket->writeData(14+20, &TCPHeader, 20);
+
+    iter->second->state = SYN_SENT;
+
+    sendPacket("IPv4", myPacket);
+}
+
+void TCPAssignment::syscall_accept(UUID syscallUUID, int pid, int param1, struct sockaddr* addr, socklen_t len) {
+    
+    map<uint64_t, struct socket_info *>::iterator iter;
+    key = makePidFdKey(pid, param1);
+
+    iter = socket_info_map.find(key);
+
+    if(iter == socket_info_map.end()) {
+        this->returnSystemCall(syscallUUID, -1);
+    }
+
+    if(iter->
 
 
 }
 
 void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 {
-    
+
 }
 
 void TCPAssignment::timerCallback(void* payload)
 {
 
+}
+
+uint64_t TCPAssignment::makePidFdKey(uint32_t pid, uint32_t fd)
+{
+	uint64_t key;
+	key = ((uint64_t)pid << 32) + (uint64_t)fd;
+	return key;
 }
 
 }
