@@ -274,12 +274,12 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
     map<uint64_t, struct socket_info*>::iterator iter;
     for (iter = socket_info_map.begin(); iter != socket_info_map.end(); iter++) {
         temp_socket = iter->second;
-        if (temp.socket.srcPort == tcp_header.destinationPort && 
-        	(temp.socket.srcIP == tcp_header.destinationIP || temp.socket.srcIP == 0)) {
+        if (temp.socket.srcPort == tcp_header.destPort && 
+        	(temp.socket.srcIP == tcp_header.destIP || temp.socket.srcIP == 0)) {
         	(uint64_t)key = iter->first;
         	// if srcIP is 0, fill it with arrived packet 
         	if (temp.socket.srcIP == 0) {
-        		temp.socket.srcIP = tcp_header.destinationIP;
+        		temp.socket.srcIP = tcp_header.destIP;
         		break;
         	}
         	break;
@@ -293,7 +293,8 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
     	return;
     }
 
-    uint32_t seq_number = tcp_header.sequenceNumber;
+    uint32_t seq_number = ntohl(tcp_header.seqNum);
+
     iter = socket_info_map.find(key);
     current_socket = iter->second;
 
@@ -304,36 +305,65 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
     swicth(type) {
     	// SYN packet
     	case(0x2):
+    		// server side
     		// reject packet if it is not listening
     		if (current_socket.state != LISTEN) {
     			this->freePacket(packet);
     			this->freePacket(my_packet);
     			return;
     		}
-    		// if number of pending is backlog, rejuect the packet
-    		if (current_socket.pending_map.size() == backlog) {
+    		// if number of pending is backlog, reject the packet
+    		if (current_socket.pending_lst.size() == backlog) {
     			this->freePacket(packet);
     			this->freePacket(my_packet);
     			return;
   			}
-
-
+  			// choose init sequence number
+  			uint16_t seq_number = (rand() % 0xffffffff);
+  			// make new connection
+  			struct connection_info *new_connection = new struct connection_info;
+  			new_connection->srcPort = tcp_header.destPort;
+  			new_connection->destPort = tcp_header.srcPort;
+  			new_connection->srcIP = dest_ip;
+  			new_connection->destIP = src_ip;
+  			current_socket.pending_lst.push_back(new_connection);
+  			/*
+				send SYN_ACK packet
+				with seq_number and ack_number
+  			*/
+  			return;
 
     	// SYN_ACK packet
     	case(0x12):
+    		// client side
+    		// reject packet if it is not listening
+    		if (current_socket.state != LISTEN) {
+    			this->freePacket(packet);
+    			this->freePacket(my_packet);
+    			return;
+    		}
+    		/*
+    			send ACK packet to server
+    			with ack_number
+    		*/
+    		current_socket.state = ESTABLISHED;
+    		return;
     	// ACK for SYN_ACK
-    	case(0x02):
+    	case(0x10):
+    		list<connection_info *>::iterator iter;
+    		for(iter = current_socket.pending_lst.begin(); 
+    			iter != current_socket.pending_lst.end(); iter ++) {
+    			if ((*iter.srcPort == tcp_header.destPort) &&
+    				(*iter.destPort == tcp_header.srcPort) &&
+    				(*iter.srcIP == src_ip) &&
+    				(*iter.destIP == dest_ip)) {
+    				current_
+    			}
+
+    		}
+    		current_socket.state = ESTABLISHED;
 
     }
-
-    /*
-    // client
-	if (LST == 0) {
-
-	} else {	// server
-
-	}
-	*/
 }
 
 void TCPAssignment::timerCallback(void* payload)
@@ -357,5 +387,13 @@ uint16_t TCPAssignment::checksum(uint32_t srcIP, uint32_t destIP, uint8_t *tcp_p
         checksum = 0;
     }
     return checksum;
+}
+uint32_t TCPAssignment::pidFromKey(uint64_t key) 
+{
+	return (uint32_t)(key >> 32);
+}
+uint32_t TCPAssignment::fdFromKey(uint64_t key)
+{
+	return (uint32_t)(key & 0xffffffff);
 }
 

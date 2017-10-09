@@ -40,10 +40,10 @@ const unsigned char CWR = 0x80;
 // structure for TCP header 20B
 struct TCP_Header
 {
-	uint16_t sourcePort;
-	uint16_t destinationPort;
-	uint32_t sequenceNumber;
-	uint32_t acknowledgeNumber;
+	uint16_t srcPort;
+	uint16_t destPort;
+	uint32_t seqNum;
+	uint32_t ackNum;
 	unsigned int headerLength : 4;
 	unsigned int reserved : 4;
 	unsigned char flags = 0;
@@ -63,13 +63,22 @@ struct socket_info
 	bool isBound = false;
 	STATE state = CLOSED;
     // pending map and established map for each server socket
-    map<uint64_t, socket_info *> pending_map;
-    map<uint64_t, socket_info *> established_map;
+    list<connection_info *> pending_lst;
+    map<connection_info *> established_lst;
 	uint32_t backlog;
 	uint32_t family;
 	uint32_t type;
 	uint32_t protocol;
 };
+// connection information
+struct connection_info
+{
+	// always think as my side
+	uint16_t srcPort;
+	uint16_t destPort;
+	uint32_t srcIP;
+	uint32_t destIP;
+}
 
 class TCPAssignment : public HostModule, public NetworkModule, public SystemCallInterface, private NetworkLog, private TimerModule
 {
