@@ -24,17 +24,8 @@ namespace E
 {
 
 map<uint64_t, struct socket_info *> socket_info_map;
-// waiting states
 
-const unsigned char FIN = 0x1;
-const unsigned char SYN = 0x2;
-const unsigned char RST = 0x4;
-const unsigned char PSH = 0x8;
-const unsigned char ACK = 0x10;
-const unsigned char URG = 0x20;
-const unsigned char ECE = 0x40;
-const unsigned char CWR = 0x80;
-
+// FIN, SYN, RST, PSH, ACK, URG, ECE, CWR
 
 TCPAssignment::TCPAssignment(Host* host) : HostModule("TCP", host),
 		NetworkModule(this->getHostModuleName(), host->getNetworkSystem()),
@@ -135,7 +126,6 @@ void TCPAssignment::syscall_close(UUID syscallUUID, int pid, int param1)
 		// fail 
 		this->returnSystemCall(syscallUUID, -1);
 	} else {
-
 		delete socket_info_map.find(fd)->second;
 		socket_info_map.erase(socket_info_map.find(fd));
 		this->returnSystemCall(syscallUUID, 0);
@@ -175,8 +165,8 @@ void TCPAssignment::syscall_bind(UUID syscallUUID, int pid, int param1,
 			// if address overlaps
 			this->returnSystemCall(syscallUUID, -1);
 		} else {
-			iter->second->destIP = addr_in->sin_addr.s_addr;
-			iter->second->destPort = addr_in->sin_port;
+			iter->second->srcIP = addr_in->sin_addr.s_addr;
+			iter->second->srcPort = addr_in->sin_port;
 			iter->second->isBound = true;
 			this->returnSystemCall(syscallUUID, 0);
 		}
@@ -193,12 +183,12 @@ int TCPAssignment::checkOverlap(struct sockaddr_in* addr)
 	// check for all addresses in addr_map
 	for (iter = socket_info_map.begin(); iter != socket_info_map.end(); iter++) {
 		
-		if (addr_in->sin_port == iter->second->destPort) {
+		if (addr_in->sin_port == iter->second->srcPort) {
 			if (addr_in->sin_addr.s_addr == 0) {
 				return -1;
-			} else if (iter->second->destIP == 0) {
+			} else if (iter->second->srcIP == 0) {
 				return -1;
-			} else if (addr_in->sin_addr.s_addr == iter->second->destIP) {
+			} else if (addr_in->sin_addr.s_addr == iter->second->srcIP) {
 				return -1;
 			}
 			
@@ -225,8 +215,8 @@ void TCPAssignment::syscall_getsockname(UUID syscallUUID, int pid, int param1,
 		// get from addr_map
 		struct sockaddr_in get_addr_in;
 		get_addr_in.sin_family = iter->second->family;
-		get_addr_in.sin_addr.s_addr = iter->second->destIP;
-		get_addr_in.sin_port = iter->second->destPort;
+		get_addr_in.sin_addr.s_addr = iter->second->srcIP;
+		get_addr_in.sin_port = iter->second->srcPort;
 		
 		memcpy(addr_in, &get_addr_in, *len);
 		this->returnSystemCall(syscallUUID, 0);
@@ -236,20 +226,107 @@ void TCPAssignment::syscall_getsockname(UUID syscallUUID, int pid, int param1,
 // listen()
 void TCPAssignment::syscall_listen(UUID syscallUUID, int pid, int fd, int bl)
 {
-	/*
+
 	// set listen flag to 1
-	LST = 1;
-	// set backlog
-	backlog = bl;
+    uint64_t key = makePidFdKey(pid, fd);
+    map<uint64_t, struct socket_info *>::iterator iter;
+    iter = socket_info_map.find(key); 
+	iter->second->state = LISTEN;
+    iter->second->backlog = bl;
 
 	this->returnSystemCall(syscallUUID, 0);
-	*/
+
 }
 
 
 void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 {
-	/*
+	// packet arrived
+    // packet length information (IP 14B + 12B + 4B + 4B, tcp header 20B)
+    uint16_t packet_length = packet->getsize();
+    uint16_t tcp_packet_length = packet_length - 26;
+    uint16_t tcp_data_length = tcp_packet_length - 20;
+    // tcp header and packet
+    struct TCP_Header tcp_header;
+    uint8_t tcp_packet[tcp_packet_length];
+    packet->readData(34, tcp_packet, tcp_packet_length);
+    packet->readData(34, &tcp_header, 20);
+    
+    // IP addresses
+    uint32_t src_ip, dest_ip;
+    pakcet->readData(14 + 12, &src_ip, 4);
+    packet->readData(14 + 16, &dest_ip, 4);
+
+    //checksum check
+    uint16_t checksum = checksum(src_ip, dest_ip, tcp_packet, tcp_packet_length);
+    if (checksum != 0) {
+        this->freePacket(packet);
+        return;
+    }
+    // define my packet
+    Packet* my_packet = this->clonePacket(packet);
+    // swap src and dest IP
+    my_packet->writeData(14 + 12, &dest_ip, 4);
+    my_packet->writeData(14 + 16, &src_ip, 4);
+    
+    // find for matching socket
+    int64_t key = -1;
+    map<uint64_t, struct socket_info*>::iterator iter;
+    for (iter = socket_info_map.begin(); iter != socket_info_map.end(); iter++) {
+        temp_socket = iter->second;
+        if (temp.socket.srcPort == tcp_header.destinationPort && 
+        	(temp.socket.srcIP == tcp_header.destinationIP || temp.socket.srcIP == 0)) {
+        	(uint64_t)key = iter->first;
+        	// if srcIP is 0, fill it with arrived packet 
+        	if (temp.socket.srcIP == 0) {
+        		temp.socket.srcIP = tcp_header.destinationIP;
+        		break;
+        	}
+        	break;
+        }
+    }
+    // can't find right socket
+    // need to deal with when key is 111111...1
+    if ((int64_t)key == -1) {
+    	this->freePacket(packet);
+    	this->freePacket(my_packet);
+    	return;
+    }
+
+    uint32_t seq_number = tcp_header.sequenceNumber;
+    iter = socket_info_map.find(key);
+    current_socket = iter->second;
+
+    // flag of arrived packet
+    unsigned char flags = tcp_header.flags;
+    unsigned char type = flags & 0x13; //to see ACK SYN FIN
+    // SYN
+    swicth(type) {
+    	// SYN packet
+    	case(0x2):
+    		// reject packet if it is not listening
+    		if (current_socket.state != LISTEN) {
+    			this->freePacket(packet);
+    			this->freePacket(my_packet);
+    			return;
+    		}
+    		// if number of pending is backlog, rejuect the packet
+    		if (current_socket.pending_map.size() == backlog) {
+    			this->freePacket(packet);
+    			this->freePacket(my_packet);
+    			return;
+  			}
+
+
+
+    	// SYN_ACK packet
+    	case(0x12):
+    	// ACK for SYN_ACK
+    	case(0x02):
+
+    }
+
+    /*
     // client
 	if (LST == 0) {
 
@@ -270,5 +347,15 @@ uint64_t TCPAssignment::makePidFdKey(uint32_t pid, uint32_t fd)
 	key = ((uint64_t)pid << 32) + (uint64_t)fd;
 	return key;
 }
-
+uint16_t TCPAssignment::checksum(uint32_t srcIP, uint32_t destIP, uint8_t *tcp_packet, uint16_t tcp_packet_length)
+{
+    uint16_t checksum;
+    uint16_t tempsum = NetworkUtil::tcp_sum(srcIP, destIP, tcp_packet, tcp_packet_len);
+    checksum = ~tempsum;
+    // 0xffff is not legal
+    if (checksum == 0xffff) {
+        checksum = 0;
+    }
+    return checksum;
 }
+
