@@ -68,16 +68,16 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
 		//this->syscall_write(syscallUUID, pid, param.param1_int, param.param2_ptr, param.param3_int);
 		break;
 	case CONNECT:
-		//this->syscall_connect(syscallUUID, pid, param.param1_int,
-		//		static_cast<struct sockaddr*>(param.param2_ptr), (socklen_t)param.param3_int);
+		this->syscall_connect(syscallUUID, pid, param.param1_int,
+				static_cast<struct sockaddr*>(param.param2_ptr), (socklen_t)param.param3_int);
 		break;
 	case LISTEN:
 		this->syscall_listen(syscallUUID, pid, param.param1_int, param.param2_int);
 		break;
 	case ACCEPT:
-		//this->syscall_accept(syscallUUID, pid, param.param1_int,
-		//		static_cast<struct sockaddr*>(param.param2_ptr),
-		//		static_cast<socklen_t*>(param.param3_ptr));
+		this->syscall_accept(syscallUUID, pid, param.param1_int,
+				static_cast<struct sockaddr*>(param.param2_ptr),
+				static_cast<socklen_t*>(param.param3_ptr));
 		break;
 	case BIND:
 		this->syscall_bind(syscallUUID, pid, param.param1_int,
@@ -238,6 +238,85 @@ void TCPAssignment::syscall_listen(UUID syscallUUID, int pid, int fd, int bl)
 
 }
 
+void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int param1, struct sockaddr* addr, socklen_t len)
+{
+ 	struct sockaddr_in* addr_in = (struct sockaddr_in *) addr;
+
+    struct in_addr source_ip;
+    uint16_t source_port;
+
+    struct in_addr dest_ip = addr_in->sin_addr.s_addr;
+    uint16_t dest_port = addr_in->sin_port;
+
+    uint64_t key = makePidFdKey(pid, param1);
+    map<uint64_t, struct socket_info *>::iterator iter;
+
+    iter = socket_info_map.find(key);
+
+    if(iter == socket_info_map.end()) {
+        this->returnSystemCall(syscallUUID, -1);
+    }
+
+    if(iter->srcPort == 0xFFFF) {
+        //if not bound
+        int interface = getHost()->getRoutingTable((const uint8_t *)&dest_ip);
+        getHost()->getIPAddr((uint8_t *)&source_ip, interface);
+
+        source_port = ((rand() % (0x10000 - 0x401)) + 0x400);
+    } else {
+        //already bound
+        source_ip = iter->second->srcIP;
+        source_port = iter->second->srcPort;
+    }
+
+    iter->second->destIP = dest_ip;
+    iter->second->destPort = dest_port;
+    iter->second->srcIP = source_ip;
+    iter->second->srcPort = source_port;
+    iter->second->isBound = true;
+
+    Packet *myPacket = allocatePacket(54);
+    struct TCP_Header TCPHeader;
+/*
+    TCPHeader->srcPort = source_port;
+    TCPHeader->destPort = dest_port;
+    TCPHeader->seqNum = htonl(rand() % 0xFFFFFFFF);
+    TCPHeader->ackNum = htonl(0);
+    TCPHeader->flags = SYN;
+    TCPHeader->windowSize = htons(10000);
+*/
+    uint16_t seqNum = rand() % 0xFFFFFFFF;
+    makeTCPHeader(&TCPHeader, source_port, dest_port, seqNum,  0, SYN, 10000);
+    //TCPHeader->checksum = checksum;
+
+    myPacket->writeData(14+12, &source_ip, 4);
+    myPacket->writeData(14+16, &dest_ip, 4);
+    mypacket->writeData(14+20, &TCPHeader, 20);
+
+    iter->second->state = SYN_SENT;
+
+    sendPacket("IPv4", myPacket);
+}
+
+void TCPAssignment::syscall_accept(UUID syscallUUID, int pid, int param1, struct sockaddr* addr, socklen_t len) {
+    
+    map<uint64_t, struct socket_info *>::iterator iter;
+    key = makePidFdKey(pid, param1);
+
+    iter = socket_info_map.find(key);
+
+    if(iter == socket_info_map.end()) {
+        this->returnSystemCall(syscallUUID, -1);
+    }
+
+    if(iter->established_map.empty()) {
+        return;
+    } else {
+        
+    }
+
+
+}
 
 void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 {
@@ -364,6 +443,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
     		current_socket.state = ESTABLISHED;
 
     }
+
 }
 
 void TCPAssignment::timerCallback(void* payload)
@@ -377,6 +457,7 @@ uint64_t TCPAssignment::makePidFdKey(uint32_t pid, uint32_t fd)
 	key = ((uint64_t)pid << 32) + (uint64_t)fd;
 	return key;
 }
+
 uint16_t TCPAssignment::checksum(uint32_t srcIP, uint32_t destIP, uint8_t *tcp_packet, uint16_t tcp_packet_length)
 {
     uint16_t checksum;
@@ -397,3 +478,11 @@ uint32_t TCPAssignment::fdFromKey(uint64_t key)
 	return (uint32_t)(key & 0xffffffff);
 }
 
+void TCPAssignment::makeTCPHeader(struct TCP_Header *TCPHeader, uint16_t srcPort, uint16_t destPort, uint16_t seqNum, uint32_t ackNum, unsigned char flags, uint16_t winSize) {
+    TCPHeader->srcPort = srcPort;
+    TCPHeader->destPort = destPort;
+    TCPHeader->seqNum = htonl(seqNum);
+    TCPHeader->ackNum = htonl(ackNum);
+    TCPHeader->flags = flags;
+    TCPHeader->windowSize = htons(winSize);
+}

@@ -1,22 +1,22 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuites tests="15" failures="0" disabled="0" errors="0" timestamp="2017-10-08T22:17:40" time="0.28" name="AllTests">
-  <testsuite name="TestEnv_Reliable" tests="2" failures="0" disabled="0" errors="0" time="0.129">
-    <testcase name="TestAccept_Backlog1" status="run" time="0.12" classname="TestEnv_Reliable" />
-    <testcase name="TestAccept_Backlog2" status="run" time="0.007" classname="TestEnv_Reliable" />
+<testsuites tests="15" failures="0" disabled="0" errors="0" timestamp="2017-10-08T22:18:09" time="0.201" name="AllTests">
+  <testsuite name="TestEnv_Reliable" tests="2" failures="0" disabled="0" errors="0" time="0.148">
+    <testcase name="TestAccept_Backlog1" status="run" time="0.142" classname="TestEnv_Reliable" />
+    <testcase name="TestAccept_Backlog2" status="run" time="0.006" classname="TestEnv_Reliable" />
   </testsuite>
-  <testsuite name="TestEnv_Any" tests="13" failures="0" disabled="0" errors="0" time="0.144">
-    <testcase name="TestClose_Connect_CloseFirst" status="run" time="0.002" classname="TestEnv_Any" />
-    <testcase name="TestClose_Connect_CloseLater" status="run" time="0.005" classname="TestEnv_Any" />
-    <testcase name="TestClose_Connect_CloseSimultaneous" status="run" time="0.037" classname="TestEnv_Any" />
-    <testcase name="TestClose_Accept_CloseLater" status="run" time="0.003" classname="TestEnv_Any" />
-    <testcase name="TestClose_Accept_CloseFirst" status="run" time="0.002" classname="TestEnv_Any" />
-    <testcase name="TestClose_Accept_CloseSimultaneous" status="run" time="0.008" classname="TestEnv_Any" />
-    <testcase name="TestAccept_BeforeAccept" status="run" time="0.005" classname="TestEnv_Any" />
-    <testcase name="TestAccept_AfterAccept" status="run" time="0.002" classname="TestEnv_Any" />
-    <testcase name="TestAccept_MultipleInterface1" status="run" time="0.034" classname="TestEnv_Any" />
-    <testcase name="TestAccept_MultipleInterface2" status="run" time="0.019" classname="TestEnv_Any" />
-    <testcase name="TestConnect_BeforeAccept" status="run" time="0.003" classname="TestEnv_Any" />
-    <testcase name="TestConnect_AfterAccept" status="run" time="0.012" classname="TestEnv_Any" />
-    <testcase name="TestConnect_SimultaneousConnect" status="run" time="0.004" classname="TestEnv_Any" />
+  <testsuite name="TestEnv_Any" tests="13" failures="0" disabled="0" errors="0" time="0.053">
+    <testcase name="TestClose_Connect_CloseFirst" status="run" time="0.008" classname="TestEnv_Any" />
+    <testcase name="TestClose_Connect_CloseLater" status="run" time="0.001" classname="TestEnv_Any" />
+    <testcase name="TestClose_Connect_CloseSimultaneous" status="run" time="0.001" classname="TestEnv_Any" />
+    <testcase name="TestClose_Accept_CloseLater" status="run" time="0.005" classname="TestEnv_Any" />
+    <testcase name="TestClose_Accept_CloseFirst" status="run" time="0.001" classname="TestEnv_Any" />
+    <testcase name="TestClose_Accept_CloseSimultaneous" status="run" time="0.001" classname="TestEnv_Any" />
+    <testcase name="TestAccept_BeforeAccept" status="run" time="0.001" classname="TestEnv_Any" />
+    <testcase name="TestAccept_AfterAccept" status="run" time="0.013" classname="TestEnv_Any" />
+    <testcase name="TestAccept_MultipleInterface1" status="run" time="0.008" classname="TestEnv_Any" />
+    <testcase name="TestAccept_MultipleInterface2" status="run" time="0.007" classname="TestEnv_Any" />
+    <testcase name="TestConnect_BeforeAccept" status="run" time="0.001" classname="TestEnv_Any" />
+    <testcase name="TestConnect_AfterAccept" status="run" time="0.001" classname="TestEnv_Any" />
+    <testcase name="TestConnect_SimultaneousConnect" status="run" time="0.001" classname="TestEnv_Any" />
   </testsuite>
 </testsuites>

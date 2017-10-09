@@ -51,15 +51,16 @@ struct TCP_Header
 	uint16_t checksum = 0;
 	uint16_t urgentPoint;
 };
+
 // socket information
 struct socket_info
 {
 	uint32_t pid;
 	uint32_t fd;
 	uint32_t destIP;
-	uint16_t destPort;
+	uint16_t destPort = 0xFFFF;
 	uint32_t srcIP;
-	uint16_t srcPort;
+	uint16_t srcPort = 0xFFFF;
 	bool isBound = false;
 	STATE state = CLOSED;
     // pending map and established map for each server socket
@@ -95,6 +96,8 @@ private:
 	virtual uint64_t makePidFdKey(uint32_t pid, uint32_t fd) final;
 	//KENS2
 	virtual void syscall_listen(UUID syscallUUID, int pid, int param1, int param2) final;
+    virtual void syscall_connect(UUID syscallUUID, int pid, int param1, struct sockaddr* addr, socklen_t len) final;
+    virtual void syscall_accept(UUID syscallUUID, int pid, int param1, struct sockaddr* addr, socklen_t len) final;
     
 public:
 	TCPAssignment(Host* host);
