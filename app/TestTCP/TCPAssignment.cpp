@@ -231,7 +231,7 @@ void TCPAssignment::syscall_listen(UUID syscallUUID, int pid, int fd, int bl)
     uint64_t key = makePidFdKey(pid, fd);
     map<uint64_t, struct socket_info *>::iterator iter;
     iter = socket_info_map.find(key); 
-	iter->second->state = LISTEN;
+	iter->second->state = E::LISTEN;
     iter->second->backlog = bl;
 
 	this->returnSystemCall(syscallUUID, 0);
@@ -242,10 +242,10 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int param1, struc
 {
  	struct sockaddr_in* addr_in = (struct sockaddr_in *) addr;
 
-    struct in_addr source_ip;
+    uint32_t source_ip;
     uint16_t source_port;
 
-    struct in_addr dest_ip = addr_in->sin_addr.s_addr;
+    uint32_t dest_ip = addr_in->sin_addr.s_addr;
     uint16_t dest_port = addr_in->sin_port;
 
     uint64_t key = makePidFdKey(pid, param1);
@@ -257,7 +257,7 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int param1, struc
         this->returnSystemCall(syscallUUID, -1);
     }
 
-    if(iter->srcPort == 0xFFFF) {
+    if(iter->second->srcPort == 0xFFFF) {
         //if not bound
         int interface = getHost()->getRoutingTable((const uint8_t *)&dest_ip);
         getHost()->getIPAddr((uint8_t *)&source_ip, interface);
@@ -285,23 +285,23 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int param1, struc
     TCPHeader->flags = SYN;
     TCPHeader->windowSize = htons(10000);
 */
-    uint16_t seqNum = rand() % 0xFFFFFFFF;
+    uint32_t seqNum = rand() % 0xFFFFFFFF;
     makeTCPHeader(&TCPHeader, source_port, dest_port, seqNum,  0, SYN, 10000);
     //TCPHeader->checksum = checksum;
 
     myPacket->writeData(14+12, &source_ip, 4);
     myPacket->writeData(14+16, &dest_ip, 4);
-    mypacket->writeData(14+20, &TCPHeader, 20);
+    myPacket->writeData(14+20, &TCPHeader, 20);
 
     iter->second->state = SYN_SENT;
 
     sendPacket("IPv4", myPacket);
 }
 
-void TCPAssignment::syscall_accept(UUID syscallUUID, int pid, int param1, struct sockaddr* addr, socklen_t len) {
+void TCPAssignment::syscall_accept(UUID syscallUUID, int pid, int param1, struct sockaddr* addr, socklen_t* len) {
     
     map<uint64_t, struct socket_info *>::iterator iter;
-    key = makePidFdKey(pid, param1);
+    uint64_t key = makePidFdKey(pid, param1);
 
     iter = socket_info_map.find(key);
 
@@ -309,7 +309,7 @@ void TCPAssignment::syscall_accept(UUID syscallUUID, int pid, int param1, struct
         this->returnSystemCall(syscallUUID, -1);
     }
 
-    if(iter->established_map.empty()) {
+    if(iter->second->established_lst.empty()) {
         return;
     } else {
         
@@ -322,9 +322,9 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 {
 	// packet arrived
     // packet length information (IP 14B + 12B + 4B + 4B, tcp header 20B)
-    uint16_t packet_length = packet->getsize();
+    uint16_t packet_length = packet->getSize();
     uint16_t tcp_packet_length = packet_length - 26;
-    uint16_t tcp_data_length = tcp_packet_length - 20;
+    //uint16_t tcp_data_length = tcp_packet_length - 20;
     // tcp header and packet
     struct TCP_Header tcp_header;
     uint8_t tcp_packet[tcp_packet_length];
@@ -333,32 +333,35 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
     
     // IP addresses
     uint32_t src_ip, dest_ip;
-    pakcet->readData(14 + 12, &src_ip, 4);
+    packet->readData(14 + 12, &src_ip, 4);
     packet->readData(14 + 16, &dest_ip, 4);
 
     //checksum check
-    uint16_t checksum = checksum(src_ip, dest_ip, tcp_packet, tcp_packet_length);
+    uint16_t checksum = calculateChecksum(src_ip, dest_ip, tcp_packet, tcp_packet_length);
     if (checksum != 0) {
         this->freePacket(packet);
         return;
     }
     // define my packet
     Packet* my_packet = this->clonePacket(packet);
+    // tcp packet header for my packet
+    struct TCP_Header my_packet_header;
     // swap src and dest IP
     my_packet->writeData(14 + 12, &dest_ip, 4);
     my_packet->writeData(14 + 16, &src_ip, 4);
+
     
     // find for matching socket
-    int64_t key = -1;
+    uint64_t key = -1;
     map<uint64_t, struct socket_info*>::iterator iter;
     for (iter = socket_info_map.begin(); iter != socket_info_map.end(); iter++) {
-        temp_socket = iter->second;
-        if (temp.socket.srcPort == tcp_header.destPort && 
-        	(temp.socket.srcIP == tcp_header.destIP || temp.socket.srcIP == 0)) {
-        	(uint64_t)key = iter->first;
+        struct socket_info * temp_socket = iter->second;
+        if (temp_socket->srcPort == tcp_header.destPort && 
+        	(temp_socket->srcIP == dest_ip || temp_socket->srcIP == 0)) {
+        	key = iter->first;
         	// if srcIP is 0, fill it with arrived packet 
-        	if (temp.socket.srcIP == 0) {
-        		temp.socket.srcIP = tcp_header.destIP;
+        	if (temp_socket->srcIP == 0) {
+        		temp_socket->srcIP = dest_ip;
         		break;
         	}
         	break;
@@ -372,51 +375,64 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
     	return;
     }
 
-    uint32_t seq_number = ntohl(tcp_header.seqNum);
+    uint32_t recv_seq_number = ntohl(tcp_header.seqNum);
 
     iter = socket_info_map.find(key);
-    current_socket = iter->second;
+    struct socket_info * current_socket = iter->second;
 
     // flag of arrived packet
     unsigned char flags = tcp_header.flags;
     unsigned char type = flags & 0x13; //to see ACK SYN FIN
     // SYN
-    swicth(type) {
+    switch(type) {
     	// SYN packet
     	case(0x2):
+        {
     		// server side
     		// reject packet if it is not listening
-    		if (current_socket.state != LISTEN) {
+    		if (current_socket->state != static_cast<int> (STATE::LISTEN)) {
     			this->freePacket(packet);
     			this->freePacket(my_packet);
     			return;
     		}
     		// if number of pending is backlog, reject the packet
-    		if (current_socket.pending_lst.size() == backlog) {
+
+    		if (current_socket->pending_lst.size() == current_socket->backlog) {
     			this->freePacket(packet);
     			this->freePacket(my_packet);
     			return;
   			}
   			// choose init sequence number
-  			uint16_t seq_number = (rand() % 0xffffffff);
+  			uint32_t send_seq_number = (rand() % 0xffffffff);
   			// make new connection
   			struct connection_info *new_connection = new struct connection_info;
   			new_connection->srcPort = tcp_header.destPort;
   			new_connection->destPort = tcp_header.srcPort;
   			new_connection->srcIP = dest_ip;
   			new_connection->destIP = src_ip;
-  			current_socket.pending_lst.push_back(new_connection);
+  			current_socket->pending_lst.push_back(new_connection);
+
+            uint32_t send_ack_number = recv_seq_number + 1;
   			/*
 				send SYN_ACK packet
 				with seq_number and ack_number
   			*/
+            makeTCPHeader(&my_packet_header, new_connection->srcPort, new_connection->destPort,
+                send_seq_number, send_ack_number, SYN + ACK, 10000);
+            my_packet->writeData(14 + 12, &new_connection->srcIP, 4);
+            my_packet->writeData(14 + 16, &new_connection->destIP, 4);
+            my_packet->writeData(14 + 20, &my_packet_header, 20);
+            
+            this->sendPacket("IPv4", my_packet);
   			return;
+        }
 
     	// SYN_ACK packet
     	case(0x12):
+        {
     		// client side
     		// reject packet if it is not listening
-    		if (current_socket.state != LISTEN) {
+    		if (current_socket->state != static_cast<int> (STATE::LISTEN)) {
     			this->freePacket(packet);
     			this->freePacket(my_packet);
     			return;
@@ -425,22 +441,34 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
     			send ACK packet to server
     			with ack_number
     		*/
-    		current_socket.state = ESTABLISHED;
+            uint32_t send_ack_number = recv_seq_number + 1;
+            makeTCPHeader(&my_packet_header, tcp_header.destPort, tcp_header.srcPort,
+                0, send_ack_number, ACK, 10000);
+            my_packet->writeData(14 + 12, &dest_ip, 4);
+            my_packet->writeData(14 + 16, &src_ip, 4);
+            my_packet->writeData(14 + 20, &my_packet_header, 20);
+    		current_socket->state = ESTABLISHED;
     		return;
+        }
     	// ACK for SYN_ACK
     	case(0x10):
+        {
     		list<connection_info *>::iterator iter;
-    		for(iter = current_socket.pending_lst.begin(); 
-    			iter != current_socket.pending_lst.end(); iter ++) {
-    			if ((*iter.srcPort == tcp_header.destPort) &&
-    				(*iter.destPort == tcp_header.srcPort) &&
-    				(*iter.srcIP == src_ip) &&
-    				(*iter.destIP == dest_ip)) {
-    				current_
+    		for(iter = current_socket->pending_lst.begin(); 
+    			iter != current_socket->pending_lst.end(); iter ++) {
+    			if (((*iter)->srcPort == tcp_header.destPort) &&
+    				((*iter)->destPort == tcp_header.srcPort) &&
+    				((*iter)->srcIP == src_ip) &&
+    				((*iter)->destIP == dest_ip)) {
+                    // push it to established list and erasei t in pending list
+    				current_socket->established_lst.push_back(*iter);
+                    current_socket->pending_lst.erase(iter);
     			}
 
     		}
-    		current_socket.state = ESTABLISHED;
+    		current_socket->state = ESTABLISHED;
+            return;
+        }
 
     }
 
@@ -458,10 +486,10 @@ uint64_t TCPAssignment::makePidFdKey(uint32_t pid, uint32_t fd)
 	return key;
 }
 
-uint16_t TCPAssignment::checksum(uint32_t srcIP, uint32_t destIP, uint8_t *tcp_packet, uint16_t tcp_packet_length)
+uint16_t TCPAssignment::calculateChecksum(uint32_t srcIP, uint32_t destIP, uint8_t *tcp_packet, uint16_t tcp_packet_length)
 {
     uint16_t checksum;
-    uint16_t tempsum = NetworkUtil::tcp_sum(srcIP, destIP, tcp_packet, tcp_packet_len);
+    uint16_t tempsum = NetworkUtil::tcp_sum(srcIP, destIP, tcp_packet, tcp_packet_length);
     checksum = ~tempsum;
     // 0xffff is not legal
     if (checksum == 0xffff) {
@@ -485,4 +513,5 @@ void TCPAssignment::makeTCPHeader(struct TCP_Header *TCPHeader, uint16_t srcPort
     TCPHeader->ackNum = htonl(ackNum);
     TCPHeader->flags = flags;
     TCPHeader->windowSize = htons(winSize);
+}
 }

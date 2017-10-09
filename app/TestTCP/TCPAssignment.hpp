@@ -52,6 +52,16 @@ struct TCP_Header
 	uint16_t urgentPoint;
 };
 
+// connection information
+struct connection_info
+{
+	// always think as my side
+	uint16_t srcPort;
+	uint16_t destPort;
+	uint32_t srcIP;
+	uint32_t destIP;
+};
+
 // socket information
 struct socket_info
 {
@@ -64,22 +74,13 @@ struct socket_info
 	bool isBound = false;
 	STATE state = CLOSED;
     // pending map and established map for each server socket
-    list<connection_info *> pending_lst;
-    map<connection_info *> established_lst;
+    std::list<connection_info *> pending_lst;
+    std::list<connection_info *> established_lst;
 	uint32_t backlog;
 	uint32_t family;
 	uint32_t type;
 	uint32_t protocol;
 };
-// connection information
-struct connection_info
-{
-	// always think as my side
-	uint16_t srcPort;
-	uint16_t destPort;
-	uint32_t srcIP;
-	uint32_t destIP;
-}
 
 class TCPAssignment : public HostModule, public NetworkModule, public SystemCallInterface, private NetworkLog, private TimerModule
 {
@@ -97,8 +98,11 @@ private:
 	//KENS2
 	virtual void syscall_listen(UUID syscallUUID, int pid, int param1, int param2) final;
     virtual void syscall_connect(UUID syscallUUID, int pid, int param1, struct sockaddr* addr, socklen_t len) final;
-    virtual void syscall_accept(UUID syscallUUID, int pid, int param1, struct sockaddr* addr, socklen_t len) final;
-    
+    virtual void syscall_accept(UUID syscallUUID, int pid, int param1, struct sockaddr* addr, socklen_t* len) final;
+    virtual void makeTCPHeader(struct TCP_Header *TCPHeader, uint16_t srcPort, uint16_t destPort, uint16_t seqNum, uint32_t ackNum, unsigned char flags, uint16_t winSize) final;
+    virtual uint16_t calculateChecksum(uint32_t srcIP, uint32_t destIP, uint8_t *tcp_packet, uint16_t tcp_packet_length) final;
+    virtual uint32_t pidFromKey(uint64_t key) final;
+    virtual uint32_t fdFromKey(uint64_t key) final;
 public:
 	TCPAssignment(Host* host);
 	virtual void initialize();

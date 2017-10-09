@@ -387,7 +387,7 @@ protected:
 };
 
 //#define UNRELIABLE
-#define RUN_SOLUTION
+//#define RUN_SOLUTION
 #ifdef RUN_SOLUTION
 typedef TestEnv1<TCPSolutionProvider> TestEnv_Reliable;
 #ifdef UNRELIABLE
