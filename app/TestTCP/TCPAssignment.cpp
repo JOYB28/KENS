@@ -24,17 +24,8 @@ namespace E
 {
 
 map<uint64_t, struct socket_info *> socket_info_map;
-// waiting states
 
-const unsigned char FIN = 0x1;
-const unsigned char SYN = 0x2;
-const unsigned char RST = 0x4;
-const unsigned char PSH = 0x8;
-const unsigned char ACK = 0x10;
-const unsigned char URG = 0x20;
-const unsigned char ECE = 0x40;
-const unsigned char CWR = 0x80;
-
+// FIN, SYN, RST, PSH, ACK, URG, ECE, CWR
 
 TCPAssignment::TCPAssignment(Host* host) : HostModule("TCP", host),
 		NetworkModule(this->getHostModuleName(), host->getNetworkSystem()),
@@ -135,7 +126,6 @@ void TCPAssignment::syscall_close(UUID syscallUUID, int pid, int param1)
 		// fail 
 		this->returnSystemCall(syscallUUID, -1);
 	} else {
-
 		delete socket_info_map.find(fd)->second;
 		socket_info_map.erase(socket_info_map.find(fd));
 		this->returnSystemCall(syscallUUID, 0);
@@ -236,14 +226,16 @@ void TCPAssignment::syscall_getsockname(UUID syscallUUID, int pid, int param1,
 // listen()
 void TCPAssignment::syscall_listen(UUID syscallUUID, int pid, int fd, int bl)
 {
-	/*
+
 	// set listen flag to 1
-	LST = 1;
-	// set backlog
-	backlog = bl;
+    uint64_t key = makePidFdKey(pid, fd);
+    map<uint64_t, struct socket_info *>::iterator iter;
+    iter = socket_info_map.find(key); 
+	iter->second->state = LISTEN;
+    iter->second->backlog = bl;
 
 	this->returnSystemCall(syscallUUID, 0);
-	*/
+
 }
 
 void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int param1, struct sockaddr* addr, socklen_t len)
@@ -265,16 +257,16 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int param1, struc
         this->returnSystemCall(syscallUUID, -1);
     }
 
-    if(addr_map.find(param1) == addr_map.end()) {
+    if(iter->srcPort == 0xFFFF) {
         //if not bound
         int interface = getHost()->getRoutingTable((const uint8_t *)&dest_ip);
         getHost()->getIPAddr((uint8_t *)&source_ip, interface);
 
-        source_port = ((rand() % (0x10000 - 0x400)) + 0x400);
+        source_port = ((rand() % (0x10000 - 0x401)) + 0x400);
     } else {
         //already bound
-        source_ip = addr_map.find(param1)->sin_addr.s_addr;
-        source_port = addr_map.find(param1)->sin_port;
+        source_ip = iter->second->srcIP;
+        source_port = iter->second->srcPort;
     }
 
     iter->second->destIP = dest_ip;
@@ -285,17 +277,20 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int param1, struc
 
     Packet *myPacket = allocatePacket(54);
     struct TCP_Header TCPHeader;
-
-    TCPHeader->sourcePort = source_port;
-    TCPHeader->destinationPort = dest_port;
-    TCPHeader->sequenceNumber = htonl(rand() % 0xFFFFFFFF);
-    TCPHeader->acknowledgeNumber = htonl(0);
+/*
+    TCPHeader->srcPort = source_port;
+    TCPHeader->destPort = dest_port;
+    TCPHeader->seqNum = htonl(rand() % 0xFFFFFFFF);
+    TCPHeader->ackNum = htonl(0);
     TCPHeader->flags = SYN;
-    TCPHeader->windowSize = htons(51200);
+    TCPHeader->windowSize = htons(10000);
+*/
+    uint16_t seqNum = rand() % 0xFFFFFFFF;
+    makeTCPHeader(&TCPHeader, source_port, dest_port, seqNum,  0, SYN, 10000);
     //TCPHeader->checksum = checksum;
 
     myPacket->writeData(14+12, &source_ip, 4);
-    myPacket->writeData(14+12, &dest_ip, 4);
+    myPacket->writeData(14+16, &dest_ip, 4);
     mypacket->writeData(14+20, &TCPHeader, 20);
 
     iter->second->state = SYN_SENT;
@@ -314,13 +309,101 @@ void TCPAssignment::syscall_accept(UUID syscallUUID, int pid, int param1, struct
         this->returnSystemCall(syscallUUID, -1);
     }
 
-    if(iter->
+    if(iter->established_map.empty()) {
+        return;
+    } else {
+        
+    }
 
 
 }
 
 void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 {
+	// packet arrived
+    // packet length information (IP 14B + 12B + 4B + 4B, tcp header 20B)
+    uint16_t packet_length = packet->getsize();
+    uint16_t tcp_packet_length = packet_length - 26;
+    uint16_t tcp_data_length = tcp_packet_length - 20;
+    // tcp header and packet
+    struct TCP_Header tcp_header;
+    uint8_t tcp_packet[tcp_packet_length];
+    packet->readData(34, tcp_packet, tcp_packet_length);
+    packet->readData(34, &tcp_header, 20);
+    
+    // IP addresses
+    uint32_t src_ip, dest_ip;
+    pakcet->readData(14 + 12, &src_ip, 4);
+    packet->readData(14 + 16, &dest_ip, 4);
+
+    //checksum check
+    uint16_t checksum = checksum(src_ip, dest_ip, tcp_packet, tcp_packet_length);
+    if (checksum != 0) {
+        this->freePacket(packet);
+        return;
+    }
+    // define my packet
+    Packet* my_packet = this->clonePacket(packet);
+    // swap src and dest IP
+    my_packet->writeData(14 + 12, &dest_ip, 4);
+    my_packet->writeData(14 + 16, &src_ip, 4);
+    
+    // find for matching socket
+    int64_t key = -1;
+    map<uint64_t, struct socket_info*>::iterator iter;
+    for (iter = socket_info_map.begin(); iter != socket_info_map.end(); iter++) {
+        temp_socket = iter->second;
+        if (temp.socket.srcPort == tcp_header.destinationPort && 
+        	(temp.socket.srcIP == tcp_header.destinationIP || temp.socket.srcIP == 0)) {
+        	(uint64_t)key = iter->first;
+        	// if srcIP is 0, fill it with arrived packet 
+        	if (temp.socket.srcIP == 0) {
+        		temp.socket.srcIP = tcp_header.destinationIP;
+        		break;
+        	}
+        	break;
+        }
+    }
+    // can't find right socket
+    // need to deal with when key is 111111...1
+    if ((int64_t)key == -1) {
+    	this->freePacket(packet);
+    	this->freePacket(my_packet);
+    	return;
+    }
+
+    uint32_t seq_number = tcp_header.sequenceNumber;
+    iter = socket_info_map.find(key);
+    current_socket = iter->second;
+
+    // flag of arrived packet
+    unsigned char flags = tcp_header.flags;
+    unsigned char type = flags & 0x13; //to see ACK SYN FIN
+    // SYN
+    swicth(type) {
+    	// SYN packet
+    	case(0x2):
+    		// reject packet if it is not listening
+    		if (current_socket.state != LISTEN) {
+    			this->freePacket(packet);
+    			this->freePacket(my_packet);
+    			return;
+    		}
+    		// if number of pending is backlog, rejuect the packet
+    		if (current_socket.pending_map.size() == backlog) {
+    			this->freePacket(packet);
+    			this->freePacket(my_packet);
+    			return;
+  			}
+
+
+
+    	// SYN_ACK packet
+    	case(0x12):
+    	// ACK for SYN_ACK
+    	case(0x02):
+
+    }
 
 }
 
@@ -336,4 +419,23 @@ uint64_t TCPAssignment::makePidFdKey(uint32_t pid, uint32_t fd)
 	return key;
 }
 
+uint16_t TCPAssignment::checksum(uint32_t srcIP, uint32_t destIP, uint8_t *tcp_packet, uint16_t tcp_packet_length)
+{
+    uint16_t checksum;
+    uint16_t tempsum = NetworkUtil::tcp_sum(srcIP, destIP, tcp_packet, tcp_packet_len);
+    checksum = ~tempsum;
+    // 0xffff is not legal
+    if (checksum == 0xffff) {
+        checksum = 0;
+    }
+    return checksum;
+}
+
+void TCPAssignment::makeTCPHeader(struct TCP_Header *TCPHeader, uint16_t srcPort, uint16_t destPort, uint16_t seqNum, uint32_t ackNum, unsigned char flags, uint16_t winSize) {
+    TCPHeader->srcPort = srcPort;
+    TCPHeader->destPort = destPort;
+    TCPHeader->seqNum = htonl(seqNum);
+    TCPHeader->ackNum = htonl(ackNum);
+    TCPHeader->flags = flags;
+    TCPHeader->windowSize = htons(winSize);
 }
