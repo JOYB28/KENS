@@ -32,7 +32,7 @@ map<int, struct TCP_Header *> totalRequest_map;
 map<int, struct TCP_Header *> pending_map;
 map<int, struct TCP_Header *> established_map;
 // check listen 
-unsigned int LST : 1 = 0;
+unsigned int LST = 0;
 int backlog;
 
 
@@ -77,8 +77,8 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
 		//this->syscall_write(syscallUUID, pid, param.param1_int, param.param2_ptr, param.param3_int);
 		break;
 	case CONNECT:
-		//this->syscall_connect(syscallUUID, pid, param.param1_int,
-		//		static_cast<struct sockaddr*>(param.param2_ptr), (socklen_t)param.param3_int);
+		this->syscall_connect(syscallUUID, pid, param.param1_int,
+				static_cast<struct sockaddr*>(param.param2_ptr), (socklen_t)param.param3_int);
 		break;
 	case LISTEN:
 		this->syscall_listen(syscallUUID, pid, param.param1_int, param.param2_int);
@@ -240,10 +240,39 @@ void TCPAssignment::syscall_listen(UUID syscallUUID, int pid, int fd, int bl)
 	this->returnSystemCall(syscallUUID, 0);
 }
 
+void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int param1, struct sockaddr* addr, socklen_t len)
+{
+ 	struct sockaddr_in* addr_in = (struct sockaddr_in *) addr;
+
+    struct in_addr source_ip;
+    uint16_t source_port;
+
+    struct in_addr dest_ip = addr_in->sin_addr.s_addr;
+    uint16_t dest_port = addr_in->sin_port;
+
+    if(addr_map.find(param1) == addr_map.end()) {
+        //if not bound
+        int interface = getHost()->getRoutingTable((const uint8_t *)&dest_ip);
+        getHost()->getIPAddr((uint8_t *)&source_ip, interface);
+
+        source_port = ((rand() % (0x10000 - 0x400)) + 0x400);
+    } else {
+        //already bound
+        source_ip = addr_map.find(param1)->sin_addr.s_addr;
+        source_port = addr_map.find(param1)->sin_port;
+    }
+
+    int interface = getRoutingTable(&dest_ip);
+
+    getIPAddr(&source_ip, interface);
+
+
+
+}
 
 void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 {
-    sdf
+    
 }
 
 void TCPAssignment::timerCallback(void* payload)

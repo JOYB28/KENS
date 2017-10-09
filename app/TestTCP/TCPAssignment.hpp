@@ -33,24 +33,17 @@ struct sock_arg
 // structure for TCP header
 struct TCP_Header
 {
-	unsigned __int16 sourcePort;
-	unsigned __int16 destinationPort;
-	unsigned __int32 sequnceNumber;
-	unsigned __int32 acknowledgeNumber;
+	uint16_t sourcePort;
+	uint16_t destinationPort;
+	uint32_t sequnceNumber;
+	uint32_t acknowledgeNumber;
 	unsigned int headerLength : 4;
 	unsigned int reserved : 4;
-	unsigned int CWR : 1;
-	unsigned int ECE : 1;
-	unsigned int URG : 1;
-	unsigned int ACK : 1;
-	unsigned int PSH : 1;
-	unsigned int RST : 1;
-	unsigned int SYN : 1;
-	unsigned int FIN : 1;
-	unsigned __int16 windowSize;
-	unsigned __int16 checksum;
-	unsigned __int16 urgentPoint;
-}
+	unsigned char flags;
+	uint16_t windowSize;
+	uint16_t checksum;
+	uint16_t urgentPoint;
+};
 
 class TCPAssignment : public HostModule, public NetworkModule, public SystemCallInterface, private NetworkLog, private TimerModule
 {
@@ -65,6 +58,8 @@ private:
 	virtual void syscall_getsockname(UUID syscallUUID, int pid, int param1, struct sockaddr* addr, socklen_t* len) final;
 	virtual int checkOverlap(struct sockaddr_in* addr) final;
 	//KENS2
+    virtual void syscall_listen(UUID syscallUUID, int pid, int param1, int param2) final;
+    virtual void syscall_connect(UUID syscallUUID, int pid, int param1, struct sockaddr* addr, socklen_t len) final;
 
 public:
 	TCPAssignment(Host* host);
