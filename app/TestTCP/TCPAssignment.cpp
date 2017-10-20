@@ -226,8 +226,7 @@ void TCPAssignment::syscall_getsockname(UUID syscallUUID, int pid, int param1,
 // listen()
 void TCPAssignment::syscall_listen(UUID syscallUUID, int pid, int fd, int bl)
 {
-
-	// set listen flag to 1
+    // server socket
     uint64_t key = makePidFdKey(pid, fd);
     map<uint64_t, struct socket_info *>::iterator iter;
     iter = socket_info_map.find(key); 
@@ -315,7 +314,6 @@ void TCPAssignment::syscall_accept(UUID syscallUUID, int pid, int param1, struct
         
     }
 
-
 }
 
 void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
@@ -325,24 +323,26 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
     uint16_t packet_length = packet->getSize();
     uint16_t tcp_packet_length = packet_length - 26;
     //uint16_t tcp_data_length = tcp_packet_length - 20;
-    // tcp header and packet
+    // received tcp header and packet
     struct TCP_Header tcp_header;
     uint8_t tcp_packet[tcp_packet_length];
     packet->readData(34, tcp_packet, tcp_packet_length);
     packet->readData(34, &tcp_header, 20);
     
-    // IP addresses
+    // IP addresses 
+    // IPv4 32bit, 4B each
     uint32_t src_ip, dest_ip;
     packet->readData(14 + 12, &src_ip, 4);
     packet->readData(14 + 16, &dest_ip, 4);
 
-    //checksum check
+    // checksum check on received packet
     uint16_t checksum = calculateChecksum(src_ip, dest_ip, tcp_packet, tcp_packet_length);
+    // bit error
     if (checksum != 0) {
         this->freePacket(packet);
         return;
     }
-    // define my packet
+    // define my packet (sending packet)
     Packet* my_packet = this->clonePacket(packet);
     // tcp packet header for my packet
     struct TCP_Header my_packet_header;
