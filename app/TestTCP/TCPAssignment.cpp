@@ -205,7 +205,7 @@ void TCPAssignment::syscall_getsockname(UUID syscallUUID, int pid, int param1,
 	int fd = param1;
 	uint64_t key = makePidFdKey(pid, fd);
 	// change sockaddr to sockaddr_in
-	struct sockaddr_in* addr_in = (struct sockaddr_in *) addr;
+	//struct sockaddr_in* addr_in = (struct sockaddr_in *) addr;
 	map<uint64_t, struct socket_info *>::iterator iter;
 	iter = socket_info_map.find(key);
 	// get socket 
@@ -213,12 +213,28 @@ void TCPAssignment::syscall_getsockname(UUID syscallUUID, int pid, int param1,
 		this->returnSystemCall(syscallUUID, -1);
 	} else {
 		// get from addr_map
-		struct sockaddr_in get_addr_in;
-		get_addr_in.sin_family = iter->second->family;
-		get_addr_in.sin_addr.s_addr = iter->second->srcIP;
-		get_addr_in.sin_port = iter->second->srcPort;
+    	struct sockaddr_in* get_addr_in = (struct sockaddr_in *)malloc(sizeof(struct sockaddr_in));
+        socklen_t tlen = sizeof(struct sockaddr_in);
+
+        memset(get_addr_in, 0, tlen);
+
+		get_addr_in->sin_family = iter->second->family;
+		get_addr_in->sin_addr.s_addr = iter->second->srcIP;
+		get_addr_in->sin_port = iter->second->srcPort;
 		
-		memcpy(addr_in, &get_addr_in, *len);
+		//memcpy(addr_in, &get_addr_in, *len);
+
+        struct sockaddr* tt = (struct sockaddr *) get_addr_in;
+        memcpy(addr, tt, *len);
+
+        //method 2
+        /*
+        ((struct sockaddr_in *) addr)->sin_family = iter->second->family;
+        ((struct sockaddr_in *) addr)->sin_addr.s_addr = iter->second->srcIP;
+        ((struct sockaddr_in *) addr)->sin_port = iter->second->srcPort;
+        */
+
+
 		this->returnSystemCall(syscallUUID, 0);
 	}
 }
@@ -310,9 +326,34 @@ void TCPAssignment::syscall_accept(UUID syscallUUID, int pid, int param1, struct
     }
 
     if(iter->second->established_lst.empty()) {
+        cout << "accept: established_lst empty";
         return;
     } else {
-        
+        struct socket_info new_socket;
+        struct connection_info *cnt_info;
+
+        cnt_info = iter->second->established_lst.front();
+
+        int socketfd = this->createFileDescriptor(pid);
+
+        new_socket.pid = pid;
+        new_socket.fd = socketfd;
+        new_socket.destIP = cnt_info->srcIP;
+        new_socket.destPort = cnt_info->srcPort;
+        new_socket.srcIP = cnt_info->destIP;
+        new_socket.srcPort = cnt_info->destPort;
+        new_socket.isBound = true;
+
+        ((struct sockaddr_in *) addr)->sin_family = AF_INET;
+        ((struct sockaddr_in *) addr)->sin_port = new_socket.srcPort;
+        ((struct sockaddr_in *) addr)->sin_addr.s_addr = new_socket.srcIP;
+
+        iter->second->established_lst.pop_front();
+
+    	uint64_t key = makePidFdKey(pid, socketfd);
+	   	socket_info_map.insert(pair<uint64_t, struct socket_info *>(key, &new_socket));
+
+        this->returnSystemCall(syscallUUID, socketfd);
     }
 
 
