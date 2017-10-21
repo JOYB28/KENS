@@ -86,6 +86,7 @@ struct socket_info
 	uint32_t seqNum;
 	UUID connectUUID;
 	UUID closeUUID;
+	UUID timerUUID;
 };
 
 class TCPAssignment : public HostModule, public NetworkModule, public SystemCallInterface, private NetworkLog, private TimerModule

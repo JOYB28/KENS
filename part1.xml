@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuites tests="8" failures="7" disabled="0" errors="0" timestamp="2017-10-21T22:46:35" time="0.295" name="AllTests">
-  <testsuite name="TestEnv_Reliable" tests="8" failures="7" disabled="0" errors="0" time="0.293">
-    <testcase name="TestOpen" status="run" time="0.288" classname="TestEnv_Reliable">
+<testsuites tests="8" failures="7" disabled="0" errors="0" timestamp="2017-10-22T01:17:07" time="0.304" name="AllTests">
+  <testsuite name="TestEnv_Reliable" tests="8" failures="7" disabled="0" errors="0" time="0.304">
+    <testcase name="TestOpen" status="run" time="0.3" classname="TestEnv_Reliable">
       <failure message="testopen.cpp:65&#x0A;Value of: ((size_t)test_size) * ((size_t)test_repeat)&#x0A;  Actual: 131072&#x0A;Expected: success&#x0A;Which is: 1024" type=""><![CDATA[testopen.cpp:65
 Value of: ((size_t)test_size) * ((size_t)test_repeat)
   Actual: 131072
@@ -16,8 +16,8 @@ Value of: 0
 Expected: duplicated
 Which is: 66519552]]></failure>
     </testcase>
-    <testcase name="TestBind_Simple" status="run" time="0.001" classname="TestEnv_Reliable" />
-    <testcase name="TestBind_DoubleBind" status="run" time="0" classname="TestEnv_Reliable">
+    <testcase name="TestBind_Simple" status="run" time="0" classname="TestEnv_Reliable" />
+    <testcase name="TestBind_DoubleBind" status="run" time="0.001" classname="TestEnv_Reliable">
       <failure message="testbind.cpp:82&#x0A;Value of: 0&#x0A;Expected: ret&#x0A;Which is: -1" type=""><![CDATA[testbind.cpp:82
 Value of: 0
 Expected: ret
@@ -29,13 +29,13 @@ Value of: 0
 Expected: ret
 Which is: -1]]></failure>
     </testcase>
-    <testcase name="TestBind_OverlapPort" status="run" time="0.002" classname="TestEnv_Reliable">
+    <testcase name="TestBind_OverlapPort" status="run" time="0.001" classname="TestEnv_Reliable">
       <failure message="testbind.cpp:172&#x0A;Value of: 0&#x0A;Expected: ret&#x0A;Which is: -1" type=""><![CDATA[testbind.cpp:172
 Value of: 0
 Expected: ret
 Which is: -1]]></failure>
     </testcase>
-    <testcase name="TestBind_OverlapClosed" status="run" time="0" classname="TestEnv_Reliable">
+    <testcase name="TestBind_OverlapClosed" status="run" time="0.001" classname="TestEnv_Reliable">
       <failure message="testbind.cpp:218&#x0A;Value of: 0&#x0A;Expected: ret&#x0A;Which is: -1" type=""><![CDATA[testbind.cpp:218
 Value of: 0
 Expected: ret
@@ -45,7 +45,7 @@ Value of: 0
 Expected: ret
 Which is: -1]]></failure>
     </testcase>
-    <testcase name="TestBind_DifferentIP_SamePort" status="run" time="0.001" classname="TestEnv_Reliable">
+    <testcase name="TestBind_DifferentIP_SamePort" status="run" time="0" classname="TestEnv_Reliable">
       <failure message="testbind.cpp:265&#x0A;Value of: 0&#x0A;Expected: ret&#x0A;Which is: -1" type=""><![CDATA[testbind.cpp:265
 Value of: 0
 Expected: ret
@@ -55,7 +55,7 @@ Value of: 0
 Expected: ret
 Which is: -1]]></failure>
     </testcase>
-    <testcase name="TestBind_SameIP_DifferentPort" status="run" time="0" classname="TestEnv_Reliable">
+    <testcase name="TestBind_SameIP_DifferentPort" status="run" time="0.001" classname="TestEnv_Reliable">
       <failure message="testbind.cpp:311&#x0A;Value of: 0&#x0A;Expected: ret&#x0A;Which is: -1" type=""><![CDATA[testbind.cpp:311
 Value of: 0
 Expected: ret
