@@ -99,6 +99,7 @@ private:
 	virtual void syscall_listen(UUID syscallUUID, int pid, int param1, int param2) final;
     virtual void syscall_connect(UUID syscallUUID, int pid, int param1, struct sockaddr* addr, socklen_t len) final;
     virtual void syscall_accept(UUID syscallUUID, int pid, int param1, struct sockaddr* addr, socklen_t* len) final;
+    virtual void syscall_getpeername(UUID syscallUUID, int pid, int param1, struct sockaddr* addr, socklen_t* len) final;
     virtual void makeTCPHeader(struct TCP_Header *TCPHeader, uint16_t srcPort, uint16_t destPort, uint16_t seqNum, uint32_t ackNum, unsigned char flags, uint16_t winSize) final;
     virtual uint16_t calculateChecksum(uint32_t srcIP, uint32_t destIP, uint8_t *tcp_packet, uint16_t tcp_packet_length) final;
     virtual uint32_t pidFromKey(uint64_t key) final;

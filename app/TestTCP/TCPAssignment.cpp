@@ -204,27 +204,24 @@ void TCPAssignment::syscall_getsockname(UUID syscallUUID, int pid, int param1,
 	// param1 is file descriptor
 	int fd = param1;
 	uint64_t key = makePidFdKey(pid, fd);
-	// change sockaddr to sockaddr_in
-	//struct sockaddr_in* addr_in = (struct sockaddr_in *) addr;
 	map<uint64_t, struct socket_info *>::iterator iter;
 	iter = socket_info_map.find(key);
 	// get socket 
 	if (iter == socket_info_map.end() || *len < sizeof(struct sockaddr)) {
 		this->returnSystemCall(syscallUUID, -1);
 	} else {
-		// get from addr_map
+		// make sockaddr_in* to save information of socket address
     	struct sockaddr_in* get_addr_in = (struct sockaddr_in *)malloc(sizeof(struct sockaddr_in));
         socklen_t tlen = sizeof(struct sockaddr_in);
-
+        // initialize memory
         memset(get_addr_in, 0, tlen);
-
+        // save information of socket address to get_addr_in
 		get_addr_in->sin_family = iter->second->family;
 		get_addr_in->sin_addr.s_addr = iter->second->srcIP;
 		get_addr_in->sin_port = iter->second->srcPort;
-		
-		//memcpy(addr_in, &get_addr_in, *len);
-
+        // type_case of get_addr_in sockaddr_in* to sockaddr*
         struct sockaddr* tt = (struct sockaddr *) get_addr_in;
+        // copy data from tt to addr
         memcpy(addr, tt, *len);
 
         //method 2
@@ -233,7 +230,6 @@ void TCPAssignment::syscall_getsockname(UUID syscallUUID, int pid, int param1,
         ((struct sockaddr_in *) addr)->sin_addr.s_addr = iter->second->srcIP;
         ((struct sockaddr_in *) addr)->sin_port = iter->second->srcPort;
         */
-
 
 		this->returnSystemCall(syscallUUID, 0);
 	}
@@ -515,6 +511,41 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 
 }
 
+void TCPAssignment::syscall_getpearname(UUID syscallUUID, int pid, int param1, struct sockaddr* addr, socklen_t* len)
+{
+	// param1 is file descriptor
+	int fd = param1;
+	uint64_t key = makePidFdKey(pid, fd);
+	map<uint64_t, struct socket_info *>::iterator iter;
+	iter = socket_info_map.find(key);
+	// get socket 
+	if (iter == socket_info_map.end() || *len < sizeof(struct sockaddr)) {
+		this->returnSystemCall(syscallUUID, -1);
+	} else {
+		// make sockaddr_in* to save information of socket address
+    	struct sockaddr_in* get_addr_in = (struct sockaddr_in *)malloc(sizeof(struct sockaddr_in));
+        socklen_t tlen = sizeof(struct sockaddr_in);
+        // initialize memory
+        memset(get_addr_in, 0, tlen);
+        // save information of socket address to get_addr_in
+		get_addr_in->sin_family = iter->second->family;
+		get_addr_in->sin_addr.s_addr = iter->second->destIP;
+		get_addr_in->sin_port = iter->second->destPort;
+        // type_case of get_addr_in sockaddr_in* to sockaddr*
+        struct sockaddr* tt = (struct sockaddr *) get_addr_in;
+        // copy data from tt to addr
+        memcpy(addr, tt, *len);
+
+        //method 2
+        /*
+        ((struct sockaddr_in *) addr)->sin_family = iter->second->family;
+        ((struct sockaddr_in *) addr)->sin_addr.s_addr = iter->second->srcIP;
+        ((struct sockaddr_in *) addr)->sin_port = iter->second->srcPort;
+        */
+
+		this->returnSystemCall(syscallUUID, 0);
+	}
+}
 void TCPAssignment::timerCallback(void* payload)
 {
 
