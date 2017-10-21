@@ -87,6 +87,17 @@ struct socket_info
 	UUID connectUUID;
 	UUID closeUUID;
 	UUID timerUUID;
+	struct accept_info* blocked_accept;
+};
+
+// when server welcome socket block the accept call
+struct accept_info
+{
+	UUID acceptUUID;
+	int pid;
+	int fd;
+	struct sockaddr* addr;
+	socklen_t* len;
 };
 
 class TCPAssignment : public HostModule, public NetworkModule, public SystemCallInterface, private NetworkLog, private TimerModule
