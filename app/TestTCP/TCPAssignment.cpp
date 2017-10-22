@@ -105,7 +105,7 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
 // socket()
 void TCPAssignment::syscall_socket(UUID syscallUUID, int pid, int param1, int param2)
 {
-    cout << "socket!!!\n";
+    //cout << "socket!!!\n";
 	// file descriptor
 	int fd = this->createFileDescriptor(pid);
 	// initialize arguments in struct socket_info
@@ -120,7 +120,7 @@ void TCPAssignment::syscall_socket(UUID syscallUUID, int pid, int param1, int pa
 // close()
 void TCPAssignment::syscall_close(UUID syscallUUID, int pid, int param1)
 {
-    cout << "close!!!!\n";
+    //cout << "close!!!!\n";
 	// file descriptor
 	int fd = param1;
 	uint64_t key = makePidFdKey(pid, fd);
@@ -134,12 +134,19 @@ void TCPAssignment::syscall_close(UUID syscallUUID, int pid, int param1)
 
     if (iter == socket_info_map.end()) {
         this->returnSystemCall(syscallUUID, -1);
+    } else if (current_socket->state == static_cast<int>(STATE::LISTEN) ||
+                current_socket->state == static_cast<int>(STATE::SYN_RCVD)) {
+        // remove file descriptor 
+        this->removeFileDescriptor(pid, fd);
+		delete socket_info_map.find(fd)->second;
+		socket_info_map.erase(socket_info_map.find(fd));
+		this->returnSystemCall(syscallUUID, 0);
     } else {
         
         // send FIN packet
         Packet *my_packet = allocatePacket(54);
         struct tcp_header TCPHeader;
-        
+       
         // packet header
         makeTCPHeader(&TCPHeader, current_socket->srcPort, current_socket->destPort, current_socket->seqNum, 0, FIN, WINDOWSIZE);
         // checksum
@@ -183,7 +190,7 @@ void TCPAssignment::syscall_close(UUID syscallUUID, int pid, int param1)
 void TCPAssignment::syscall_bind(UUID syscallUUID, int pid, int param1,
 	struct sockaddr* addr, socklen_t len)
 {	
-    cout << "bind!!!\n";
+    //cout << "bind!!!\n";
 	// lets print all keys and values in addr_map and arg_map
 	// param1 is file descriptor
 	int fd = param1;
@@ -195,11 +202,13 @@ void TCPAssignment::syscall_bind(UUID syscallUUID, int pid, int param1,
 
 	if (iter == socket_info_map.end() || len < sizeof(struct sockaddr*)) {
 		// fail if socket fd is not exist in arg_map
+        cout << "no info or size \n";
 		this->returnSystemCall(syscallUUID, -1);
 	} else if (!(iter->second->isBound)) {
 		// check overlap 
 		if (this->checkOverlap(addr_in) < 0) {
 			// if address overlaps
+            cout << "overlap \n";
 			this->returnSystemCall(syscallUUID, -1);
 		} else {
 			iter->second->srcIP = addr_in->sin_addr.s_addr;
@@ -208,6 +217,7 @@ void TCPAssignment::syscall_bind(UUID syscallUUID, int pid, int param1,
 			this->returnSystemCall(syscallUUID, 0);
 		}
 	} else {
+        cout << "isBound: " << iter->second->isBound << endl;
 		this->returnSystemCall(syscallUUID, -1);
 	}
 
@@ -276,7 +286,7 @@ void TCPAssignment::syscall_getsockname(UUID syscallUUID, int pid, int param1,
 // listen()
 void TCPAssignment::syscall_listen(UUID syscallUUID, int pid, int fd, int bl)
 {
-    cout << "listen!!!!\n";
+    //cout << "listen!!!!\n";
     //cout << "pid: " << pid << " fd: " << fd << " bl: " << bl << endl;
     // server socket
     uint64_t key = makePidFdKey(pid, fd);
@@ -291,7 +301,7 @@ void TCPAssignment::syscall_listen(UUID syscallUUID, int pid, int fd, int bl)
 
 void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int param1, struct sockaddr* addr, socklen_t len)
 {
-    cout << "connect!!!\n";
+    //cout << "connect!!!\n";
     // client socket
  	struct sockaddr_in* addr_in = (struct sockaddr_in *) addr;
 
@@ -359,7 +369,7 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int param1, struc
 }
 
 void TCPAssignment::syscall_accept(UUID syscallUUID, int pid, int param1, struct sockaddr* addr, socklen_t* len) {
-    cout << "accept!!!\n";
+    //cout << "accept!!!\n";
     map<uint64_t, struct socket_info *>::iterator iter;
     uint64_t key = makePidFdKey(pid, param1);
 
@@ -503,7 +513,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
     	this->freePacket(my_packet);
     	return;
     }
-    cout << "key: " << key << endl;
+    //cout << "key: " << key << endl;
 
     uint32_t recv_seq_number = ntohl(tcp_header.seqNum);
 
@@ -536,7 +546,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 
     		// if number of pending is backlog, reject the packet
     		if (current_socket->pending_lst.size() == current_socket->backlog) {
-                cout << "full pending_lst!!\n";
+                //cout << "full pending_lst!!\n";
     			this->freePacket(packet);
     			this->freePacket(my_packet);
     			return;
@@ -593,8 +603,10 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
     			with ack_number
     		*/
             uint32_t send_ack_number = recv_seq_number + 1;
+            uint32_t send_seq_number = current_socket->seqNum + 1;
+            current_socket->seqNum = send_seq_number;
             makeTCPHeader(&my_packet_header, tcp_header.destPort, tcp_header.srcPort,
-                0, send_ack_number, ACK, WINDOWSIZE);
+                send_seq_number, send_ack_number, ACK, WINDOWSIZE);
             // checksum
             uint16_t checksum = calculateChecksum(src_ip, dest_ip, (uint8_t*)&my_packet_header, (uint16_t)20);
             my_packet_header.checksum = htons(checksum);
@@ -625,6 +637,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
                 cout << "fd: " << iter_addr->first << " port: " << ntohs(iter_addr->second->sin_port) << " ip: " << iter_addr->second->sin_addr.s_addr << "\n";
             }
             */
+            /*
             cout << "ACK for SYN_ACK\n";
             cout << "pending_lst\n";
             for(auto v: current_socket->pending_lst) {
@@ -641,6 +654,9 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
             cout << "srcPort: " << tcp_header.destPort << " destPort: " << tcp_header.srcPort << " srcIP: " << dest_ip << " destIP: " << src_ip << " seqNum: " << ntohl(tcp_header.ackNum) << endl;
 
             cout << current_socket->state << endl;
+            */
+
+            current_socket->seqNum += 1;
 
             // SYN_RCVD (server)
             if (current_socket->state == static_cast<int> (STATE::SYN_RCVD)) {
@@ -723,6 +739,14 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
                 
             }
 
+            else if (current_socket->state == static_cast<int> (STATE::CLOSING)) {
+                Time current_time = this->getHost()->getSystem()->getCurrentTime();
+                // store our key in new pointer and put it in payload for addTimer
+                uint64_t* timerKey = new uint64_t;
+                *timerKey = key;
+                current_socket->timerUUID = TimerModule::addTimer(timerKey, current_time + (Time)1000000000);
+            }
+
             break;
     		
         }
@@ -732,11 +756,13 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
             cout << "fin packet!!\n";
             // reject packet if it's state is not ESTABLISHED and FIN_WAIT_2
             if (current_socket->state != static_cast<int> (STATE::ESTABLISHED)&&
+                current_socket->state != static_cast<int> (STATE::FIN_WAIT_2)&&
                 current_socket->state != static_cast<int> (STATE::FIN_WAIT_2)) {
                 this->freePacket(packet);
                 this->freePacket(my_packet);
                 return;
             }
+
             /*
                 send ACK packet 
                 for FIN 
@@ -744,7 +770,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
             cout << "haha\n";
             uint32_t send_ack_number = recv_seq_number + 1;
             makeTCPHeader(&my_packet_header, tcp_header.destPort, tcp_header.srcPort,
-                ++current_socket->seqNum, send_ack_number, ACK, WINDOWSIZE);
+                current_socket->seqNum, send_ack_number, ACK, WINDOWSIZE);
             // checksum
             uint16_t checksum = calculateChecksum(src_ip, dest_ip, (uint8_t*)&my_packet_header, 20);
             my_packet_header.checksum = htons(checksum);
@@ -753,20 +779,22 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
             my_packet->writeData(14 + 20, &my_packet_header, 20);
             // change state
             if (current_socket->state == static_cast<int> (STATE::ESTABLISHED)) {
-                cout << "server!!!\n";
                 current_socket->state = CLOSE_WAIT;
             } else if (current_socket->state == static_cast<int> (STATE::FIN_WAIT_2)) {
-                cout << "client!!!\n";
                 current_socket->state = TIME_WAIT;
 
                 Time current_time = this->getHost()->getSystem()->getCurrentTime();
+                /*
                 cout << "key: " << key << endl;
                 cout << "fd: " << current_socket->fd << endl;
                 cout << "pid: " << current_socket->pid << endl;
+                */
                 // store our key in new pointer and put it in payload for addTimer
                 uint64_t* timerKey = new uint64_t;
                 *timerKey = key;
                 current_socket->timerUUID = TimerModule::addTimer(timerKey, current_time + (Time)1000000000);
+            } else if (current_socket->state == static_cast<int> (STATE::FIN_WAIT_1)) {
+                current_socket->state = CLOSING;
             }
             // send packet
             this->sendPacket("IPv4", my_packet);

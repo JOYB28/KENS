@@ -25,7 +25,7 @@ namespace E
 // enum for STATE
 enum STATE 
 {
-    CLOSED, LISTEN, SYN_RCVD, SYN_SENT, ESTABLISHED, CLOSE_WAIT, FIN_WAIT_1, FIN_WAIT_2, TIME_WAIT, LAST_ACK
+    CLOSED, LISTEN, SYN_RCVD, SYN_SENT, ESTABLISHED, CLOSE_WAIT, FIN_WAIT_1, FIN_WAIT_2, TIME_WAIT, LAST_ACK, CLOSING
 };
 // flags
 const unsigned char FIN = 0x1;
@@ -40,8 +40,8 @@ const unsigned char CWR = 0x80;
 // structure for TCP header 20B
 struct tcp_header
 {
-	uint16_t srcPort;
-	uint16_t destPort;
+	uint16_t srcPort = 0xFFFF;
+    uint16_t destPort;
 	uint32_t seqNum;
 	uint32_t ackNum;
 	unsigned int headerLength : 4;

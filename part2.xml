@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuites tests="15" failures="8" disabled="0" errors="0" timestamp="2017-10-22T04:12:00" time="14.016" name="AllTests">
-  <testsuite name="TestEnv_Reliable" tests="2" failures="1" disabled="0" errors="0" time="0.328">
-    <testcase name="TestAccept_Backlog1" status="run" time="0.235" classname="TestEnv_Reliable" />
-    <testcase name="TestAccept_Backlog2" status="run" time="0.092" classname="TestEnv_Reliable">
+<testsuites tests="15" failures="8" disabled="0" errors="0" timestamp="2017-10-22T20:19:08" time="4.192" name="AllTests">
+  <testsuite name="TestEnv_Reliable" tests="2" failures="1" disabled="0" errors="0" time="0.269">
+    <testcase name="TestAccept_Backlog1" status="run" time="0.203" classname="TestEnv_Reliable" />
+    <testcase name="TestAccept_Backlog2" status="run" time="0.066" classname="TestEnv_Reliable">
       <failure message="testhandshake.cpp:48&#x0A;Value of: 0&#x0A;Expected: ret&#x0A;Which is: -1" type=""><![CDATA[testhandshake.cpp:48
 Value of: 0
 Expected: ret
@@ -14,11 +14,11 @@ Expected: (int)client_sockets.size()
 Which is: 0]]></failure>
     </testcase>
   </testsuite>
-  <testsuite name="TestEnv_Any" tests="13" failures="7" disabled="0" errors="0" time="13.687">
-    <testcase name="TestClose_Connect_CloseFirst" status="run" time="0.005" classname="TestEnv_Any" />
-    <testcase name="TestClose_Connect_CloseLater" status="run" time="0.014" classname="TestEnv_Any" />
-    <testcase name="TestClose_Connect_CloseSimultaneous" status="run" time="0.002" classname="TestEnv_Any" />
-    <testcase name="TestClose_Accept_CloseLater" status="run" time="1.972" classname="TestEnv_Any">
+  <testsuite name="TestEnv_Any" tests="13" failures="7" disabled="0" errors="0" time="3.923">
+    <testcase name="TestClose_Connect_CloseFirst" status="run" time="0.003" classname="TestEnv_Any" />
+    <testcase name="TestClose_Connect_CloseLater" status="run" time="0.001" classname="TestEnv_Any" />
+    <testcase name="TestClose_Connect_CloseSimultaneous" status="run" time="0.003" classname="TestEnv_Any" />
+    <testcase name="TestClose_Accept_CloseLater" status="run" time="0.561" classname="TestEnv_Any">
       <failure message="testclose.cpp:49&#x0A;Value of: 0&#x0A;Expected: ret&#x0A;Which is: -1" type=""><![CDATA[testclose.cpp:49
 Value of: 0
 Expected: ret
@@ -33,51 +33,51 @@ Which is: 0]]></failure>
 Value of: 0
 Expected: ret
 Which is: -1]]></failure>
-      <failure message="testclose.cpp:75&#x0A;Value of: temp_addr.sin_family&#x0A;  Actual: 65040&#x0A;Expected: addr.sin_family&#x0A;Which is: 2" type=""><![CDATA[testclose.cpp:75
+      <failure message="testclose.cpp:75&#x0A;Value of: temp_addr.sin_family&#x0A;  Actual: 7696&#x0A;Expected: addr.sin_family&#x0A;Which is: 2" type=""><![CDATA[testclose.cpp:75
 Value of: temp_addr.sin_family
-  Actual: 65040
+  Actual: 7696
 Expected: addr.sin_family
 Which is: 2]]></failure>
-      <failure message="testclose.cpp:76&#x0A;Value of: temp_addr.sin_port&#x0A;  Actual: 26491&#x0A;Expected: addr.sin_port&#x0A;Which is: 3879" type=""><![CDATA[testclose.cpp:76
+      <failure message="testclose.cpp:76&#x0A;Value of: temp_addr.sin_port&#x0A;  Actual: 52138&#x0A;Expected: addr.sin_port&#x0A;Which is: 3879" type=""><![CDATA[testclose.cpp:76
 Value of: temp_addr.sin_port
-  Actual: 26491
+  Actual: 52138
 Expected: addr.sin_port
 Which is: 3879]]></failure>
       <failure message="testclose.cpp:83&#x0A;Value of: 0&#x0A;Expected: ret&#x0A;Which is: -1" type=""><![CDATA[testclose.cpp:83
 Value of: 0
 Expected: ret
 Which is: -1]]></failure>
-      <failure message="testclose.cpp:86&#x0A;Expected: (sleep_time) &gt;= (0), actual: -3519014 vs 0" type=""><![CDATA[testclose.cpp:86
-Expected: (sleep_time) >= (0), actual: -3519014 vs 0]]></failure>
+      <failure message="testclose.cpp:86&#x0A;Expected: (sleep_time) &gt;= (0), actual: -3521420 vs 0" type=""><![CDATA[testclose.cpp:86
+Expected: (sleep_time) >= (0), actual: -3521420 vs 0]]></failure>
       <failure message="testclose.cpp:122&#x0A;Expected: (ret) &gt;= (0), actual: -1 vs 0" type=""><![CDATA[testclose.cpp:122
 Expected: (ret) >= (0), actual: -1 vs 0]]></failure>
       <failure message="testclose.cpp:127&#x0A;Value of: 0&#x0A;Expected: ret&#x0A;Which is: -1" type=""><![CDATA[testclose.cpp:127
 Value of: 0
 Expected: ret
 Which is: -1]]></failure>
-      <failure message="testclose.cpp:128&#x0A;Value of: temp_addr.sin_addr.s_addr&#x0A;  Actual: 32747&#x0A;Expected: addr.sin_addr.s_addr&#x0A;Which is: 117483712" type=""><![CDATA[testclose.cpp:128
+      <failure message="testclose.cpp:128&#x0A;Value of: temp_addr.sin_addr.s_addr&#x0A;  Actual: 32762&#x0A;Expected: addr.sin_addr.s_addr&#x0A;Which is: 117483712" type=""><![CDATA[testclose.cpp:128
 Value of: temp_addr.sin_addr.s_addr
-  Actual: 32747
+  Actual: 32762
 Expected: addr.sin_addr.s_addr
 Which is: 117483712]]></failure>
-      <failure message="testclose.cpp:129&#x0A;Value of: temp_addr.sin_family&#x0A;  Actual: 3600&#x0A;Expected: addr.sin_family&#x0A;Which is: 2" type=""><![CDATA[testclose.cpp:129
+      <failure message="testclose.cpp:129&#x0A;Value of: temp_addr.sin_family&#x0A;  Actual: 11792&#x0A;Expected: addr.sin_family&#x0A;Which is: 2" type=""><![CDATA[testclose.cpp:129
 Value of: temp_addr.sin_family
-  Actual: 3600
+  Actual: 11792
 Expected: addr.sin_family
 Which is: 2]]></failure>
-      <failure message="testclose.cpp:130&#x0A;Value of: temp_addr.sin_port&#x0A;  Actual: 26620&#x0A;Expected: addr.sin_port&#x0A;Which is: 3879" type=""><![CDATA[testclose.cpp:130
+      <failure message="testclose.cpp:130&#x0A;Value of: temp_addr.sin_port&#x0A;  Actual: 52266&#x0A;Expected: addr.sin_port&#x0A;Which is: 3879" type=""><![CDATA[testclose.cpp:130
 Value of: temp_addr.sin_port
-  Actual: 26620
+  Actual: 52266
 Expected: addr.sin_port
 Which is: 3879]]></failure>
       <failure message="testclose.cpp:136&#x0A;Value of: 0&#x0A;Expected: ret&#x0A;Which is: -1" type=""><![CDATA[testclose.cpp:136
 Value of: 0
 Expected: ret
 Which is: -1]]></failure>
-      <failure message="testclose.cpp:139&#x0A;Expected: (sleep_time) &gt;= (0), actual: -140726752779184 vs 0" type=""><![CDATA[testclose.cpp:139
-Expected: (sleep_time) >= (0), actual: -140726752779184 vs 0]]></failure>
+      <failure message="testclose.cpp:139&#x0A;Expected: (sleep_time) &gt;= (0), actual: -140730082739584 vs 0" type=""><![CDATA[testclose.cpp:139
+Expected: (sleep_time) >= (0), actual: -140730082739584 vs 0]]></failure>
     </testcase>
-    <testcase name="TestClose_Accept_CloseFirst" status="run" time="2.079" classname="TestEnv_Any">
+    <testcase name="TestClose_Accept_CloseFirst" status="run" time="0.555" classname="TestEnv_Any">
       <failure message="testclose.cpp:49&#x0A;Value of: 0&#x0A;Expected: ret&#x0A;Which is: -1" type=""><![CDATA[testclose.cpp:49
 Value of: 0
 Expected: ret
@@ -92,51 +92,51 @@ Which is: 0]]></failure>
 Value of: 0
 Expected: ret
 Which is: -1]]></failure>
-      <failure message="testclose.cpp:75&#x0A;Value of: temp_addr.sin_family&#x0A;  Actual: 3600&#x0A;Expected: addr.sin_family&#x0A;Which is: 2" type=""><![CDATA[testclose.cpp:75
+      <failure message="testclose.cpp:75&#x0A;Value of: temp_addr.sin_family&#x0A;  Actual: 11792&#x0A;Expected: addr.sin_family&#x0A;Which is: 2" type=""><![CDATA[testclose.cpp:75
 Value of: temp_addr.sin_family
-  Actual: 3600
+  Actual: 11792
 Expected: addr.sin_family
 Which is: 2]]></failure>
-      <failure message="testclose.cpp:76&#x0A;Value of: temp_addr.sin_port&#x0A;  Actual: 26620&#x0A;Expected: addr.sin_port&#x0A;Which is: 3879" type=""><![CDATA[testclose.cpp:76
+      <failure message="testclose.cpp:76&#x0A;Value of: temp_addr.sin_port&#x0A;  Actual: 52266&#x0A;Expected: addr.sin_port&#x0A;Which is: 3879" type=""><![CDATA[testclose.cpp:76
 Value of: temp_addr.sin_port
-  Actual: 26620
+  Actual: 52266
 Expected: addr.sin_port
 Which is: 3879]]></failure>
       <failure message="testclose.cpp:83&#x0A;Value of: 0&#x0A;Expected: ret&#x0A;Which is: -1" type=""><![CDATA[testclose.cpp:83
 Value of: 0
 Expected: ret
 Which is: -1]]></failure>
-      <failure message="testclose.cpp:86&#x0A;Expected: (sleep_time) &gt;= (0), actual: -3529014 vs 0" type=""><![CDATA[testclose.cpp:86
-Expected: (sleep_time) >= (0), actual: -3529014 vs 0]]></failure>
+      <failure message="testclose.cpp:86&#x0A;Expected: (sleep_time) &gt;= (0), actual: -3531420 vs 0" type=""><![CDATA[testclose.cpp:86
+Expected: (sleep_time) >= (0), actual: -3531420 vs 0]]></failure>
       <failure message="testclose.cpp:122&#x0A;Expected: (ret) &gt;= (0), actual: -1 vs 0" type=""><![CDATA[testclose.cpp:122
 Expected: (ret) >= (0), actual: -1 vs 0]]></failure>
       <failure message="testclose.cpp:127&#x0A;Value of: 0&#x0A;Expected: ret&#x0A;Which is: -1" type=""><![CDATA[testclose.cpp:127
 Value of: 0
 Expected: ret
 Which is: -1]]></failure>
-      <failure message="testclose.cpp:128&#x0A;Value of: temp_addr.sin_addr.s_addr&#x0A;  Actual: 32747&#x0A;Expected: addr.sin_addr.s_addr&#x0A;Which is: 117483712" type=""><![CDATA[testclose.cpp:128
+      <failure message="testclose.cpp:128&#x0A;Value of: temp_addr.sin_addr.s_addr&#x0A;  Actual: 32762&#x0A;Expected: addr.sin_addr.s_addr&#x0A;Which is: 117483712" type=""><![CDATA[testclose.cpp:128
 Value of: temp_addr.sin_addr.s_addr
-  Actual: 32747
+  Actual: 32762
 Expected: addr.sin_addr.s_addr
 Which is: 117483712]]></failure>
-      <failure message="testclose.cpp:129&#x0A;Value of: temp_addr.sin_family&#x0A;  Actual: 65040&#x0A;Expected: addr.sin_family&#x0A;Which is: 2" type=""><![CDATA[testclose.cpp:129
+      <failure message="testclose.cpp:129&#x0A;Value of: temp_addr.sin_family&#x0A;  Actual: 7696&#x0A;Expected: addr.sin_family&#x0A;Which is: 2" type=""><![CDATA[testclose.cpp:129
 Value of: temp_addr.sin_family
-  Actual: 65040
+  Actual: 7696
 Expected: addr.sin_family
 Which is: 2]]></failure>
-      <failure message="testclose.cpp:130&#x0A;Value of: temp_addr.sin_port&#x0A;  Actual: 26491&#x0A;Expected: addr.sin_port&#x0A;Which is: 3879" type=""><![CDATA[testclose.cpp:130
+      <failure message="testclose.cpp:130&#x0A;Value of: temp_addr.sin_port&#x0A;  Actual: 52138&#x0A;Expected: addr.sin_port&#x0A;Which is: 3879" type=""><![CDATA[testclose.cpp:130
 Value of: temp_addr.sin_port
-  Actual: 26491
+  Actual: 52138
 Expected: addr.sin_port
 Which is: 3879]]></failure>
       <failure message="testclose.cpp:136&#x0A;Value of: 0&#x0A;Expected: ret&#x0A;Which is: -1" type=""><![CDATA[testclose.cpp:136
 Value of: 0
 Expected: ret
 Which is: -1]]></failure>
-      <failure message="testclose.cpp:139&#x0A;Expected: (sleep_time) &gt;= (0), actual: -140726752769184 vs 0" type=""><![CDATA[testclose.cpp:139
-Expected: (sleep_time) >= (0), actual: -140726752769184 vs 0]]></failure>
+      <failure message="testclose.cpp:139&#x0A;Expected: (sleep_time) &gt;= (0), actual: -140730082729584 vs 0" type=""><![CDATA[testclose.cpp:139
+Expected: (sleep_time) >= (0), actual: -140730082729584 vs 0]]></failure>
     </testcase>
-    <testcase name="TestClose_Accept_CloseSimultaneous" status="run" time="1.855" classname="TestEnv_Any">
+    <testcase name="TestClose_Accept_CloseSimultaneous" status="run" time="0.583" classname="TestEnv_Any">
       <failure message="testclose.cpp:49&#x0A;Value of: 0&#x0A;Expected: ret&#x0A;Which is: -1" type=""><![CDATA[testclose.cpp:49
 Value of: 0
 Expected: ret
@@ -151,51 +151,51 @@ Which is: 0]]></failure>
 Value of: 0
 Expected: ret
 Which is: -1]]></failure>
-      <failure message="testclose.cpp:75&#x0A;Value of: temp_addr.sin_family&#x0A;  Actual: 65040&#x0A;Expected: addr.sin_family&#x0A;Which is: 2" type=""><![CDATA[testclose.cpp:75
+      <failure message="testclose.cpp:75&#x0A;Value of: temp_addr.sin_family&#x0A;  Actual: 7696&#x0A;Expected: addr.sin_family&#x0A;Which is: 2" type=""><![CDATA[testclose.cpp:75
 Value of: temp_addr.sin_family
-  Actual: 65040
+  Actual: 7696
 Expected: addr.sin_family
 Which is: 2]]></failure>
-      <failure message="testclose.cpp:76&#x0A;Value of: temp_addr.sin_port&#x0A;  Actual: 26491&#x0A;Expected: addr.sin_port&#x0A;Which is: 3879" type=""><![CDATA[testclose.cpp:76
+      <failure message="testclose.cpp:76&#x0A;Value of: temp_addr.sin_port&#x0A;  Actual: 52138&#x0A;Expected: addr.sin_port&#x0A;Which is: 3879" type=""><![CDATA[testclose.cpp:76
 Value of: temp_addr.sin_port
-  Actual: 26491
+  Actual: 52138
 Expected: addr.sin_port
 Which is: 3879]]></failure>
       <failure message="testclose.cpp:83&#x0A;Value of: 0&#x0A;Expected: ret&#x0A;Which is: -1" type=""><![CDATA[testclose.cpp:83
 Value of: 0
 Expected: ret
 Which is: -1]]></failure>
-      <failure message="testclose.cpp:86&#x0A;Expected: (sleep_time) &gt;= (0), actual: -3529014 vs 0" type=""><![CDATA[testclose.cpp:86
-Expected: (sleep_time) >= (0), actual: -3529014 vs 0]]></failure>
+      <failure message="testclose.cpp:86&#x0A;Expected: (sleep_time) &gt;= (0), actual: -3531420 vs 0" type=""><![CDATA[testclose.cpp:86
+Expected: (sleep_time) >= (0), actual: -3531420 vs 0]]></failure>
       <failure message="testclose.cpp:122&#x0A;Expected: (ret) &gt;= (0), actual: -1 vs 0" type=""><![CDATA[testclose.cpp:122
 Expected: (ret) >= (0), actual: -1 vs 0]]></failure>
       <failure message="testclose.cpp:127&#x0A;Value of: 0&#x0A;Expected: ret&#x0A;Which is: -1" type=""><![CDATA[testclose.cpp:127
 Value of: 0
 Expected: ret
 Which is: -1]]></failure>
-      <failure message="testclose.cpp:128&#x0A;Value of: temp_addr.sin_addr.s_addr&#x0A;  Actual: 32747&#x0A;Expected: addr.sin_addr.s_addr&#x0A;Which is: 117483712" type=""><![CDATA[testclose.cpp:128
+      <failure message="testclose.cpp:128&#x0A;Value of: temp_addr.sin_addr.s_addr&#x0A;  Actual: 32762&#x0A;Expected: addr.sin_addr.s_addr&#x0A;Which is: 117483712" type=""><![CDATA[testclose.cpp:128
 Value of: temp_addr.sin_addr.s_addr
-  Actual: 32747
+  Actual: 32762
 Expected: addr.sin_addr.s_addr
 Which is: 117483712]]></failure>
-      <failure message="testclose.cpp:129&#x0A;Value of: temp_addr.sin_family&#x0A;  Actual: 3600&#x0A;Expected: addr.sin_family&#x0A;Which is: 2" type=""><![CDATA[testclose.cpp:129
+      <failure message="testclose.cpp:129&#x0A;Value of: temp_addr.sin_family&#x0A;  Actual: 11792&#x0A;Expected: addr.sin_family&#x0A;Which is: 2" type=""><![CDATA[testclose.cpp:129
 Value of: temp_addr.sin_family
-  Actual: 3600
+  Actual: 11792
 Expected: addr.sin_family
 Which is: 2]]></failure>
-      <failure message="testclose.cpp:130&#x0A;Value of: temp_addr.sin_port&#x0A;  Actual: 26620&#x0A;Expected: addr.sin_port&#x0A;Which is: 3879" type=""><![CDATA[testclose.cpp:130
+      <failure message="testclose.cpp:130&#x0A;Value of: temp_addr.sin_port&#x0A;  Actual: 52266&#x0A;Expected: addr.sin_port&#x0A;Which is: 3879" type=""><![CDATA[testclose.cpp:130
 Value of: temp_addr.sin_port
-  Actual: 26620
+  Actual: 52266
 Expected: addr.sin_port
 Which is: 3879]]></failure>
       <failure message="testclose.cpp:136&#x0A;Value of: 0&#x0A;Expected: ret&#x0A;Which is: -1" type=""><![CDATA[testclose.cpp:136
 Value of: 0
 Expected: ret
 Which is: -1]]></failure>
-      <failure message="testclose.cpp:139&#x0A;Expected: (sleep_time) &gt;= (0), actual: -140726752779184 vs 0" type=""><![CDATA[testclose.cpp:139
-Expected: (sleep_time) >= (0), actual: -140726752779184 vs 0]]></failure>
+      <failure message="testclose.cpp:139&#x0A;Expected: (sleep_time) &gt;= (0), actual: -140730082739584 vs 0" type=""><![CDATA[testclose.cpp:139
+Expected: (sleep_time) >= (0), actual: -140730082739584 vs 0]]></failure>
     </testcase>
-    <testcase name="TestAccept_BeforeAccept" status="run" time="1.966" classname="TestEnv_Any">
+    <testcase name="TestAccept_BeforeAccept" status="run" time="0.549" classname="TestEnv_Any">
       <failure message="testhandshake.cpp:48&#x0A;Value of: 0&#x0A;Expected: ret&#x0A;Which is: -1" type=""><![CDATA[testhandshake.cpp:48
 Value of: 0
 Expected: ret
@@ -211,7 +211,7 @@ Value of: expected_connect
 Expected: (int)client_sockets.size()
 Which is: 0]]></failure>
     </testcase>
-    <testcase name="TestAccept_AfterAccept" status="run" time="1.822" classname="TestEnv_Any">
+    <testcase name="TestAccept_AfterAccept" status="run" time="0.545" classname="TestEnv_Any">
       <failure message="testhandshake.cpp:48&#x0A;Value of: 0&#x0A;Expected: ret&#x0A;Which is: -1" type=""><![CDATA[testhandshake.cpp:48
 Value of: 0
 Expected: ret
@@ -227,7 +227,7 @@ Value of: expected_connect
 Expected: (int)client_sockets.size()
 Which is: 0]]></failure>
     </testcase>
-    <testcase name="TestAccept_MultipleInterface1" status="run" time="1.981" classname="TestEnv_Any">
+    <testcase name="TestAccept_MultipleInterface1" status="run" time="0.568" classname="TestEnv_Any">
       <failure message="testhandshake.cpp:48&#x0A;Value of: 0&#x0A;Expected: ret&#x0A;Which is: -1" type=""><![CDATA[testhandshake.cpp:48
 Value of: 0
 Expected: ret
@@ -243,7 +243,7 @@ Value of: expected_connect
 Expected: (int)client_sockets.size()
 Which is: 0]]></failure>
     </testcase>
-    <testcase name="TestAccept_MultipleInterface2" status="run" time="1.975" classname="TestEnv_Any">
+    <testcase name="TestAccept_MultipleInterface2" status="run" time="0.548" classname="TestEnv_Any">
       <failure message="testhandshake.cpp:48&#x0A;Value of: 0&#x0A;Expected: ret&#x0A;Which is: -1" type=""><![CDATA[testhandshake.cpp:48
 Value of: 0
 Expected: ret
@@ -269,7 +269,7 @@ Expected: (int)client_sockets.size()
 Which is: 0]]></failure>
     </testcase>
     <testcase name="TestConnect_BeforeAccept" status="run" time="0.002" classname="TestEnv_Any" />
-    <testcase name="TestConnect_AfterAccept" status="run" time="0.002" classname="TestEnv_Any" />
-    <testcase name="TestConnect_SimultaneousConnect" status="run" time="0.003" classname="TestEnv_Any" />
+    <testcase name="TestConnect_AfterAccept" status="run" time="0.001" classname="TestEnv_Any" />
+    <testcase name="TestConnect_SimultaneousConnect" status="run" time="0.002" classname="TestEnv_Any" />
   </testsuite>
 </testsuites>
