@@ -49,7 +49,7 @@ struct tcp_header
 	unsigned char flags = 0;
 	uint16_t windowSize;
 	uint16_t checksum = 0;
-	uint16_t urgentPoint;
+	uint16_t urgentPoint = 0;
 };
 
 // connection information

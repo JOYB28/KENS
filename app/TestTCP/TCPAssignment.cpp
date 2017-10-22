@@ -141,7 +141,7 @@ void TCPAssignment::syscall_close(UUID syscallUUID, int pid, int param1)
         struct tcp_header TCPHeader;
         
         // packet header
-        makeTCPHeader(&TCPHeader, current_socket->srcPort, current_socket->destPort, current_socket->seqNum+1, 0, FIN, WINDOWSIZE);
+        makeTCPHeader(&TCPHeader, current_socket->srcPort, current_socket->destPort, current_socket->seqNum, 0, FIN, WINDOWSIZE);
         // checksum
         uint16_t checksum = calculateChecksum(current_socket->srcIP, current_socket->destIP,
             (uint8_t*)&TCPHeader, 20);
@@ -744,7 +744,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
             cout << "haha\n";
             uint32_t send_ack_number = recv_seq_number + 1;
             makeTCPHeader(&my_packet_header, tcp_header.destPort, tcp_header.srcPort,
-                0, send_ack_number, ACK, WINDOWSIZE);
+                ++current_socket->seqNum, send_ack_number, ACK, WINDOWSIZE);
             // checksum
             uint16_t checksum = calculateChecksum(src_ip, dest_ip, (uint8_t*)&my_packet_header, 20);
             my_packet_header.checksum = htons(checksum);
@@ -848,6 +848,8 @@ void TCPAssignment::makeTCPHeader(struct tcp_header *TCPHeader, uint16_t srcPort
     TCPHeader->ackNum = htonl(ackNum);
     TCPHeader->flags = flags;
     TCPHeader->windowSize = htons(winSize);
+    // for headerLength 20B, after consider hton process
+    TCPHeader->reserved = 5;
 }
 
 void TCPAssignment::timerCallback(void* payload) {
