@@ -19,6 +19,7 @@
 
 #include <gtest/gtest.h>
 #include "testenv.hpp"
+#include <iostream>
 
 using namespace E;
 

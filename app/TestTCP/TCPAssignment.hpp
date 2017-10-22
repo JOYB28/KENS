@@ -44,8 +44,7 @@ struct tcp_header
     uint16_t destPort;
 	uint32_t seqNum;
 	uint32_t ackNum;
-	unsigned int headerLength : 4;
-	unsigned int reserved : 4;
+	unsigned char headerLength;
 	unsigned char flags = 0;
 	uint16_t windowSize;
 	uint16_t checksum = 0;
@@ -87,7 +86,7 @@ struct socket_info
 	UUID connectUUID;
 	UUID closeUUID;
 	UUID timerUUID;
-	struct accept_info* blocked_accept;
+	struct accept_info* blocked_accept = NULL;
 };
 
 // when server welcome socket block the accept call
