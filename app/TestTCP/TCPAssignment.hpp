@@ -77,6 +77,7 @@ struct socket_info
     // pending map and established map for each server socket
     std::list<connection_info *> pending_lst;
     std::list<connection_info *> established_lst;
+    std::list<connection_info *> beforeAccept_lst;
 	uint32_t backlog;
 	uint32_t family;
 	uint32_t type;

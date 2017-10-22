@@ -111,6 +111,8 @@ void TCPAssignment::syscall_socket(UUID syscallUUID, int pid, int param1, int pa
 	// initialize arguments in struct socket_info
 	uint64_t key = makePidFdKey(pid, fd);
 	struct socket_info *info = new struct socket_info;
+    info->pid = pid;
+    info->fd = fd;
 	info->family = param1;
 	info->type = param2;
     info->state = STATE::LISTEN;
@@ -374,7 +376,27 @@ void TCPAssignment::syscall_accept(UUID syscallUUID, int pid, int param1, struct
         this->returnSystemCall(syscallUUID, -1);
     }
 
-    if(current_socket->established_lst.empty()) {
+    if(!current_socket->beforeAccept_lst.empty()) {
+        map<uint64_t, struct socket_info *>::iterator iter2;
+
+        struct connection_info * temp = iter->second->beforeAccept_lst.front();
+
+        ((struct sockaddr_in *) addr)->sin_family = AF_INET;
+        ((struct sockaddr_in *) addr)->sin_port = temp->srcPort;
+        ((struct sockaddr_in *) addr)->sin_addr.s_addr = temp->srcIP;
+
+        iter->second->beforeAccept_lst.pop_front();
+
+        for(iter2 = socket_info_map.begin(); iter2 != socket_info_map.end(); iter2++) {
+            if ((iter2->second->destIP == temp->destIP) &&
+                    (iter2->second->srcIP == temp->srcIP) &&
+                    (iter2->second->destPort == temp->destPort) &&
+                    (iter2->second->srcPort == temp->srcPort)) {
+                break;
+            }
+        }
+        this->returnSystemCall(syscallUUID, iter2->second->fd);
+    } else if(current_socket->established_lst.empty()) {
         // block the accept syscall
         cout << "accept: established_lst empty so block it!!!\n";
         struct accept_info* blocked_accept = new struct accept_info;
@@ -571,7 +593,6 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
             my_packet->writeData(14 + 20, &my_packet_header, 20);
             // change state
             current_socket->state = SYN_RCVD;
-            cout << "receive syn. state: " << current_socket->state << endl;
             // send packet
             this->sendPacket(fromModule, my_packet);
             break;
@@ -748,10 +769,66 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
             if (current_socket->state != static_cast<int> (STATE::ESTABLISHED)&&
                 current_socket->state != static_cast<int> (STATE::FIN_WAIT_2)&&
                 current_socket->state != static_cast<int> (STATE::FIN_WAIT_1)) {
-                cout << "fin packet ignore \n";
-                this->freePacket(packet);
-                this->freePacket(my_packet);
-                return;
+                if (current_socket->state == static_cast<int> (STATE::SYN_RCVD)) {
+                    cout << "fuck \n";
+                    list<connection_info *>::iterator iter;
+                    for(iter = current_socket->established_lst.begin(); 
+                        iter != current_socket->established_lst.end(); iter ++) {
+                        if (((*iter)->srcPort == tcp_header.destPort) &&
+                            ((*iter)->destPort == tcp_header.srcPort) &&
+                            ((*iter)->srcIP == dest_ip) &&
+                            ((*iter)->destIP == src_ip)) {
+
+                            cout << "start setting \n";
+                            int newpid = current_socket->pid;
+                            cout << "1 \n";
+                            cout << "current pid: " << newpid << endl;
+                            int newfd = this->createFileDescriptor(newpid);
+                            cout << "2 \n";
+                            uint64_t newkey = makePidFdKey(newpid, newfd);
+                            cout << "3 \n";
+                            struct socket_info *temp_socket = new struct socket_info;
+                            cout << "4 \n";
+                            temp_socket->pid = newpid;
+                            temp_socket->fd = newfd;
+                            temp_socket->destIP = src_ip;
+                            temp_socket->srcIP = dest_ip;
+                            temp_socket->destPort = tcp_header.srcPort;
+                            temp_socket->srcPort = tcp_header.destPort;
+                            temp_socket->seqNum = (*iter)->seqNum;
+                            temp_socket->isBound = true;
+                            temp_socket->family = AF_INET;
+                            temp_socket->type = SOCK_STREAM;
+                            temp_socket->state = CLOSE_WAIT;
+                            cout << "5 \n";
+
+                            socket_info_map.insert(pair<uint64_t, struct socket_info *>(newkey, temp_socket));
+                            current_socket->beforeAccept_lst.push_back(*iter);
+                            current_socket->established_lst.erase(iter);
+
+                            cout << "set packet \n";
+                            uint32_t send_ack_number = recv_seq_number + 1;
+                            makeTCPHeader(&my_packet_header, tcp_header.destPort, tcp_header.srcPort,
+                            temp_socket->seqNum, send_ack_number, ACK, WINDOWSIZE);
+                            // checksum
+                            uint16_t checksum = calculateChecksum(src_ip, dest_ip, (uint8_t*)&my_packet_header, 20);
+                            my_packet_header.checksum = htons(checksum);
+
+                            // write packet
+                            my_packet->writeData(14 + 20, &my_packet_header, 20);
+
+                            cout << "send packet \n";
+                            this->sendPacket("IPv4", my_packet);
+                            break;
+                        }
+                    }
+
+                } else {
+                    this->freePacket(packet);
+                    this->freePacket(my_packet);
+                    return;
+                }
+                break;
             }
 
             /*
