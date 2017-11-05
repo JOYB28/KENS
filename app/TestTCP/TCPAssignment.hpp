@@ -89,22 +89,23 @@ struct socket_info
 	uint32_t protocol;
 
 	uint32_t seqNum;
-	uint32_t ackNum;
+    uint32_t ackNum;
 	UUID connectUUID;
 	// UUID closeUUID;
-	UUID writeUUID;
 	UUID timerUUID;
 	struct accept_info* blocked_accept = NULL;
 
-	uint16_t rwnd;
-	// send buffer 
-	uint8_t send_buffer[BUFFERSIZE];
-	uint16_t LastByteSent = 0;
-	uint16_t LastByteAcked = 0;
-	// receive buffer
-	uint8_t receive_buffer[BUFFERSIZE];
-	uint16_t LastByteRead = 0;
-	uint16_t LastByteRcvd = 0;
+    uint16_t rwnd;
+    // send buffer
+    uint8_t send_buffer[BUFFERSIZE];
+    uint16_t LastByteSent = 0;
+    uint16_t LastByteAcked = 0;
+    //receive buffer
+    uint8_t receive_buffer[BUFFERSIZE];
+    uint16_t LastByteRead = 0;
+    uint16_t LastByteRcvd = 0;
+    map<uint64_t, uint64_t> missPoint;
+    uint16_t endPoint;
 
 };
 
@@ -140,10 +141,12 @@ private:
     virtual uint16_t calculateChecksum(uint32_t srcIP, uint32_t destIP, uint8_t *tcp_packet, uint16_t tcp_packet_length) final;
     //virtual uint32_t pidFromKey(uint64_t key) final;
     //virtual uint32_t fdFromKey(uint64_t key) final;
+
     // KENS3
     virtual void syscall_read(UUID syscallUUID, int pid, int param1, uint8_t* param2, int param3) final;
     virtual void syscall_write(UUID syscallUUID, int pid, int param1, uint8_t* param2, int param3) final;
     virtual void data_send(int length, struct socket_info* current_socket, struct tcp_header TCPHeader, uint8_t* tcp_packet) final;
+
 public:
 	TCPAssignment(Host* host);
 	virtual void initialize();
