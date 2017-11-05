@@ -17,6 +17,8 @@
 #include <E/E_TimeUtil.hpp>
 
 #define WINDOWSIZE 51200
+#define BUFFERSIZE 51200
+#define MSS 512
 
 // 20150547 Lee Sangmin
 // 20160140 Kim Yoonseo,
@@ -63,10 +65,10 @@ void TCPAssignment::systemCallback(UUID syscallUUID, int pid, const SystemCallPa
 		this->syscall_close(syscallUUID, pid, param.param1_int);
 		break;
 	case READ:
-		//this->syscall_read(syscallUUID, pid, param.param1_int, param.param2_ptr, param.param3_int);
+		this->syscall_read(syscallUUID, pid, param.param1_int, (uint8_t*)param.param2_ptr, param.param3_int);
 		break;
 	case WRITE:
-		//this->syscall_write(syscallUUID, pid, param.param1_int, param.param2_ptr, param.param3_int);
+		//this->syscall_write(syscallUUID, pid, param.param1_int, (uint8_t*)param.param2_ptr, param.param3_int);
 		break;
 	case CONNECT:
 		this->syscall_connect(syscallUUID, pid, param.param1_int,
@@ -409,6 +411,7 @@ void TCPAssignment::syscall_accept(UUID syscallUUID, int pid, int param1, struct
         new_socket->type = SOCK_STREAM;
         ///////////
         new_socket->seqNum = cnt_info->seqNum;
+        new_socket->ackNum = cnt_info->ackNum;
         
         ((struct sockaddr_in *) addr)->sin_family = new_socket->family;
         ((struct sockaddr_in *) addr)->sin_port = new_socket->srcPort;
@@ -431,7 +434,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
     // packet length information (IP 14B + 12B + 4B + 4B, tcp header 20B)
     uint16_t packet_length = packet->getSize();
     uint16_t tcp_packet_length = packet_length - 34;
-    //uint16_t tcp_data_length = tcp_packet_length - 20;
+    uint16_t tcp_data_length = tcp_packet_length - 20;
     // received tcp header and packet
     // tcp header
     struct tcp_header tcp_header;
@@ -540,6 +543,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
                 send_seq_number, send_ack_number, SYN + ACK, WINDOWSIZE);
 
             new_connection->seqNum = send_seq_number + 1;
+            new_connection->ackNum = send_ack_number;
 
             // checksum  
             uint16_t checksum = calculateChecksum(new_connection->srcIP, new_connection->destIP, 
@@ -573,6 +577,8 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
             uint32_t send_seq_number = current_socket->seqNum;
             makeTCPHeader(&my_packet_header, tcp_header.destPort, tcp_header.srcPort,
                 send_seq_number, send_ack_number, ACK, WINDOWSIZE);
+
+            current_socket->ackNum = send_ack_number;
 
             // checksum
             uint16_t checksum = calculateChecksum(src_ip, dest_ip, (uint8_t*)&my_packet_header, (uint16_t)20);
@@ -661,6 +667,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
                     new_socket->type = SOCK_STREAM;
                     ///////////
                     new_socket->seqNum = cnt_info->seqNum;
+                    new_socket->ackNum = cnt_info->ackNum;
 
                     ((struct sockaddr_in *) current_socket->blocked_accept->addr)->sin_family = new_socket->family;
                     ((struct sockaddr_in *) current_socket->blocked_accept->addr)->sin_port = new_socket->srcPort;
@@ -728,6 +735,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
                             temp_socket->destPort = tcp_header.srcPort;
                             temp_socket->srcPort = tcp_header.destPort;
                             temp_socket->seqNum = (*iter)->seqNum;
+                            temp_socket->ackNum = (*iter)->ackNum;
                             temp_socket->isBound = true;
                             temp_socket->family = AF_INET;
                             temp_socket->type = SOCK_STREAM;
@@ -740,6 +748,8 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
                             uint32_t send_ack_number = recv_seq_number + 1;
                             makeTCPHeader(&my_packet_header, tcp_header.destPort, tcp_header.srcPort,
                             temp_socket->seqNum, send_ack_number, ACK, WINDOWSIZE);
+                            
+                            temp_socket->ackNum = send_ack_number;
                             // checksum
                             uint16_t checksum = calculateChecksum(src_ip, dest_ip, (uint8_t*)&my_packet_header, 20);
                             my_packet_header.checksum = htons(checksum);
@@ -765,6 +775,8 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
             uint32_t send_ack_number = recv_seq_number + 1;
             makeTCPHeader(&my_packet_header, tcp_header.destPort, tcp_header.srcPort,
                 current_socket->seqNum, send_ack_number, ACK, WINDOWSIZE);
+
+            current_socket->ackNum = send_ack_number;
             // checksum
             uint16_t checksum = calculateChecksum(src_ip, dest_ip, (uint8_t*)&my_packet_header, 20);
             my_packet_header.checksum = htons(checksum);
@@ -808,6 +820,8 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
             uint32_t send_seq_number = current_socket->seqNum;
             makeTCPHeader(&my_packet_header, tcp_header.destPort, tcp_header.srcPort,
                 send_seq_number, send_ack_number, ACK, WINDOWSIZE);
+
+            current_socket->ackNum = send_ack_number;
             // checksum
             uint16_t checksum = calculateChecksum(src_ip, dest_ip, (uint8_t*)&my_packet_header, (uint16_t)20);
             my_packet_header.checksum = htons(checksum);
@@ -825,6 +839,57 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
             uint64_t* timerKey = new uint64_t;
             *timerKey = key;
             current_socket->timerUUID = TimerModule::addTimer(timerKey, current_time + (Time)1000000000);
+        }
+        default:
+        {
+            if(current_socket->ackNum < recv_seq_number) {
+                memcpy(&current_socket->receive_buffer + current_socket->LastByteRcvd + recv_seq_number - current_socket->ackNum,
+                        &tcp_packet + 54, tcp_data_length);
+
+                map<uint64_t, uint64_t>::iterator iter;
+            	iter = current_socket->missPoint.find(LastByteRcvd);
+
+                if(iter == current_socket->missPoint.end()) {
+                    current_socket->missPoint.insert(pair<uint64_t, uint64_t>(LastbyteRcvd, LastByteRcvd + recv_seq_number - current_socket->ackNum));
+                    current_socket->endPoint = recv_seq_number + 
+                } else if(iter->second < recv_seq_number)
+
+
+                uint32_t send_seq_number = current_socket->seqNum;
+                uint32_t send_ack_number = current_socket->ackNum;
+                makeTCPHeader(&my_packet_header, tcp_header.destPort, tcp_header.srcPort,
+                        send_seq_number, send_ack_number, ACK, current_socket->rwnd);
+
+               // checksum
+                uint16_t checksum = calculateChecksum(src_ip, dest_ip, (uint8_t*)&my_packet_header, (uint16_t)20);
+                my_packet_header.checksum = htons(checksum);
+
+                // write packet
+                my_packet->writeData(14 + 20, &my_packet_header, 20);
+                // send packet
+                this->sendPacket("IPv4", my_packet);
+
+            } else if(current_socket->ackNum > recv_seq_number) {
+                uint32_t send_seq_number = current_socket->seqNum;
+                uint32_t send_ack_number = current_socket->ackNum;
+                makeTCPHeader(&my_packet_header, tcp_header.destPort, tcp_header.srcPort,
+                        send_seq_number, send_ack_number, ACK, current_socket->rwnd);
+
+               // checksum
+                uint16_t checksum = calculateChecksum(src_ip, dest_ip, (uint8_t*)&my_packet_header, (uint16_t)20);
+                my_packet_header.checksum = htons(checksum);
+
+                // write packet
+                my_packet->writeData(14 + 20, &my_packet_header, 20);
+                // send packet
+                this->sendPacket("IPv4", my_packet);                
+
+            } else {
+                uint32_t send_seq_number = current_socket->seqNum;
+                uint32_t send_ack_number = recv_seq_number + (uint32_t) tcp_data_length;
+                makeTCPHeader(&my_packet_header, tcp_header.destPort, tcp_header.srcPort,
+                        send_seq_number, send_ack_number, ACK, WINDOWSIZE);
+            }
         }
         this->freePacket(my_packet);
     }
@@ -865,6 +930,35 @@ void TCPAssignment::syscall_getpeername(UUID syscallUUID, int pid, int param1,
 
 		this->returnSystemCall(syscallUUID, 0);
 	}
+}
+
+void TCPAssignment::syscall_read(UUID syscallUUID, int pid, int param1, uint8_t* param2, int param3)
+{
+    int fd = param1;
+    uint64_t key = makePidFdKey(pid, fd);
+
+    map<uint64_t, struct socket_info *>::iterator iter;
+
+    // find corresponding socket
+    iter = socket_info_map.find(key);
+    struct socket_info * current_socket = iter->second;
+
+    if(iter == socket_info_map.end()) {
+        this->returnSystemCall(syscallUUID, -1);
+    }
+
+    if(current_socket->LastByteRcvd == 0) {
+        return;
+    } else if(current_socket->LastByteRcvd - current_socket->LastByteRead < param3) {
+        int readbyte = current_socket->LastByteRcvd - current_socket->LastByteRead;
+        memcpy(param2, &current_socket->receive_buffer + current_socket->LastByteRead, readbyte);
+        current_socket->LastByteRead += readbyte;
+        this->returnSystemCall(syscallUUID, readbyte);
+    } else {
+        memcpy(param2, &current_socket->receive_buffer + current_socket->LastByteRead, param3);
+        current_socket->LastByteRead += param3;
+        this->returnSystemCall(syscallUUID, param3);
+    }
 }
 
 uint64_t TCPAssignment::makePidFdKey(uint32_t pid, uint32_t fd)
@@ -919,7 +1013,6 @@ void TCPAssignment::timerCallback(void* payload) {
         free((uint64_t *) payload);
         return;
     }
-    //cout << iter->first << endl;
     struct socket_info * current_socket = iter->second;
 
     if(current_socket->state == static_cast<int>(STATE::TIME_WAIT)) {
