@@ -20,6 +20,10 @@
 
 #include <E/E_TimerModule.hpp>
 
+#define WINDOWSIZE 51200
+#define BUFFERSIZE 51200
+#define MSS 512
+
 namespace E
 {
 // enum for STATE
@@ -61,6 +65,7 @@ struct connection_info
 	uint32_t destIP;
 
 	uint32_t seqNum;
+	uint32_t ackNum;
 };
 
 // socket information
@@ -84,10 +89,23 @@ struct socket_info
 	uint32_t protocol;
 
 	uint32_t seqNum;
+	uint32_t ackNum;
 	UUID connectUUID;
-	//UUID closeUUID;
+	// UUID closeUUID;
+	UUID writeUUID;
 	UUID timerUUID;
 	struct accept_info* blocked_accept = NULL;
+
+	uint16_t rwnd;
+	// send buffer 
+	uint8_t send_buffer[BUFFERSIZE];
+	uint16_t LastByteSent = 0;
+	uint16_t LastByteAcked = 0;
+	// receive buffer
+	uint8_t receive_buffer[BUFFERSIZE];
+	uint16_t LastByteRead = 0;
+	uint16_t LastByteRcvd = 0;
+
 };
 
 // when server welcome socket block the accept call
@@ -106,14 +124,14 @@ private:
 
 private:
 	virtual void timerCallback(void* payload) final;
-	//KENS1
+	// KENS1
 	virtual void syscall_socket(UUID syscallUUID, int pid, int param1, int param2) final;
 	virtual void syscall_close(UUID syscallUUID, int pid, int param1) final;
 	virtual void syscall_bind(UUID syscallUUID, int pid, int fd, struct sockaddr* addr_ptr, socklen_t len) final;
 	virtual void syscall_getsockname(UUID syscallUUID, int pid, int param1, struct sockaddr* addr, socklen_t* len) final;
 	virtual int checkOverlap(struct sockaddr_in* addr) final;
 	virtual uint64_t makePidFdKey(uint32_t pid, uint32_t fd) final;
-	//KENS2
+	// KENS2
 	virtual void syscall_listen(UUID syscallUUID, int pid, int param1, int param2) final;
     virtual void syscall_connect(UUID syscallUUID, int pid, int param1, struct sockaddr* addr, socklen_t len) final;
     virtual void syscall_accept(UUID syscallUUID, int pid, int param1, struct sockaddr* addr, socklen_t* len) final;
@@ -122,6 +140,10 @@ private:
     virtual uint16_t calculateChecksum(uint32_t srcIP, uint32_t destIP, uint8_t *tcp_packet, uint16_t tcp_packet_length) final;
     //virtual uint32_t pidFromKey(uint64_t key) final;
     //virtual uint32_t fdFromKey(uint64_t key) final;
+    // KENS3
+    virtual void syscall_read(UUID syscallUUID, int pid, int param1, uint8_t* param2, int param3) final;
+    virtual void syscall_write(UUID syscallUUID, int pid, int param1, uint8_t* param2, int param3) final;
+    virtual void data_send(int length, struct socket_info* current_socket, struct tcp_header TCPHeader, uint8_t* tcp_packet) final;
 public:
 	TCPAssignment(Host* host);
 	virtual void initialize();
