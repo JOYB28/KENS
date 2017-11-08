@@ -300,15 +300,18 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int param1, struc
     map<uint64_t, struct socket_info *>::iterator iter;
     iter = socket_info_map.find(key);
 
-    if(iter == socket_info_map.end()) {
+    if (iter == socket_info_map.end()) {
         this->returnSystemCall(syscallUUID, -1);
         return;
     }
 
-    if(iter->second->srcPort == 0xFFFF) {
+    if (iter->second->srcPort == 0xFFFF) {
         //if not bound
         int interface = getHost()->getRoutingTable((const uint8_t *)&dest_ip);
-        getHost()->getIPAddr((uint8_t *)&source_ip, interface);
+        if (!getHost()->getIPAddr((uint8_t *)&source_ip, interface)) {
+            this->returnSystemCall(syscallUUID, -1);
+            return;
+        }
         source_port = ((rand() % (0x10000 - 0x401)) + 0x400);
     } else {
         //already bound
@@ -932,11 +935,9 @@ void TCPAssignment::syscall_getpeername(UUID syscallUUID, int pid, int param1,
 	}
 }
 // KENS3 
-/// read & write
 void TCPAssignment::syscall_write(UUID syscallUUID, int pid, int param1, uint8_t* param2, int param3)
 {
     //cout << "write!!!\n";
-
     uint64_t key = makePidFdKey(pid, param1);
     // find corresponding socket
     map<uint64_t, struct socket_info *>::iterator iter;
@@ -947,46 +948,59 @@ void TCPAssignment::syscall_write(UUID syscallUUID, int pid, int param1, uint8_t
         return;
     }
     struct socket_info * current_socket = iter->second;
-    
-    uint16_t using_buffer = current_socket->LastByteSent - current_socket->LastByteAcked;
+    uint32_t dest_ip = current_socket->destIP;
+    uint32_t source_ip = current_socket->srcIP;
+    uint16_t using_buffer = usingBuffer(current_socket->LastByteSent, current_socket->LastByteAcked);
     uint16_t remaining_buffer = BUFFERSIZE - using_buffer;
+    
+    int interface = getHost()->getRoutingTable((const uint8_t *)&dest_ip);
+    if (!getHost()->getIPAddr((uint8_t *)&source_ip, interface)) {
+        this->returnSystemCall(syscallUUID, -1);
+        return;
+    }
 
     struct tcp_header TCPHeader;
     uint8_t tcp_packet[MSS];
 
+    // byte we need to write
     int write_byte = param3;
-    // sending buffer is not enough 
-    if (remaining_buffer == 0 || remaining_buffer < param3){
-        // block write()
+    // byte we sent
+    int sent_byte = 0;
+    // minimum of unacked_packet and rwnd
+    if (using_buffer >= current_socket->rwnd) {
         current_socket->writeUUID = syscallUUID;
         return;
-    } else {
-        while (current_socket->LastByteSent - current_socket->LastByteAcked < current_socket->rwnd
-            && write_byte > 0) {
-            // write_byte is larger than
-            if (write_byte >= MSS) {
-                // save in buffer
-                memcpy(param2, &current_socket->send_buffer[current_socket->LastByteSent], MSS);
-                // encapsulate that data and send it
-                data_send(MSS, current_socket, TCPHeader, tcp_packet);
+    }
+    // if internal buffer is full
+    if (reamining_buffer == 0) {
+        current_socket->writeUUID = syscallUUID;
+        return;
+    }
+    write_byte = std::min(current_socket->rwnd - using_buffer, remaining_buffer, param3);
 
-                write_byte -= MSS;
+    while (write_byte > 0) {
+        // write_byte is larger than MSS
+        if (write_byte >= MSS) {
+            // save in buffer
+            memcpy(param2, &current_socket->send_buffer[current_socket->LastByteSent], MSS);
+            // encapsulate that data and send it
+            data_send(MSS, current_socket, TCPHeader, tcp_packet);
+            write_byte -= MSS;
+            sent_byte += MSS;
 
-            } else {
-                // last part for sending
-                memcpy(param2, current_socket->send_buffer, write_byte);
-                // encapsulate that data and send it
-                data_send(write_byte, current_socket, TCPHeader, tcp_packet);
-
-                write_byte = 0;
-
-            }
+        } else {
+            // last part for sending
+            memcpy(param2, &current_socket->send_buffer[current_socket->LastByteSent], write_byte);
+            // encapsulate that data and send it
+            data_send(write_byte, current_socket, TCPHeader, tcp_packet);
+            sent_byte += write_byte;
+            write_byte = 0;
         }
     }
-    this->returnSystemCall(syscallUUID, param3);
+    this->returnSystemCall(syscallUUID, sent_byte);
     return; 
 }
-
+// send data with length
 void TCPAssignment::data_send(int length, struct socket_info* current_socket,
     struct tcp_header TCPHeader, uint8_t* tcp_packet) {
 
@@ -998,20 +1012,20 @@ void TCPAssignment::data_send(int length, struct socket_info* current_socket,
     makeTCPHeader(&TCPHeader, current_socket->srcPort, current_socket->destPort, current_socket->seqNum,
         current_socket->ackNum, 0, WINDOWSIZE);
     memcpy(&TCPHeader, tcp_packet, 20);
-    memcpy(&current_socket->send_buffer[current_socket->LastByteSent], &tcp_packet[20], MSS);
-    current_socket->seqNum += MSS;
-    uint16_t checksum = calculateChecksum(source_ip, dest_ip, tcp_packet, 20 + MSS);
+    memcpy(&current_socket->send_buffer[current_socket->LastByteSent], &tcp_packet[20], length);
+    current_socket->seqNum = (current_socket->seqNum + length) & 0xFFFFFFFF;
+    uint16_t checksum = calculateChecksum(source_ip, dest_ip, tcp_packet, 20 + length);
     checksum = htons(checksum);
     // allocate checksum
     memcpy(&checksum, &tcp_packet[16], 2);
-    cout << "checksum: " << calculateChecksum(source_ip, dest_ip, tcp_packet, 20 + MSS) << endl;
+    cout << "checksum: " << calculateChecksum(source_ip, dest_ip, tcp_packet, 20 + length) << endl;
 
     myPacket->writeData(14+12, &source_ip, 4);
     myPacket->writeData(14+16, &dest_ip, 4);
-    myPacket->writeData(14+20, tcp_packet, MSS);
+    myPacket->writeData(14+20, tcp_packet, length);
     // send packet
     sendPacket("IPv4", myPacket);
-    current_socket->LastByteSent += MSS;
+    current_socket->LastByteSent = (current_socket->LastByteSent + length) & 0xFFFF;
     return;
 }
 
@@ -1028,18 +1042,21 @@ void TCPAssignment::syscall_read(UUID syscallUUID, int pid, int param1, uint8_t*
 
     if(iter == socket_info_map.end()) {
         this->returnSystemCall(syscallUUID, -1);
+        return; 
     }
 
-    if(current_socket->LastByteRcvd == 0) {
+    if(current_socket->LastByteRcvd - current_socket->LastByteRead == 0) {
+        // block read()
+        current_socket->readUUID = syscallUUID;
         return;
     } else if(current_socket->LastByteRcvd - current_socket->LastByteRead < param3) {
-        int readbyte = current_socket->LastByteRcvd - current_socket->LastByteRead;
+        uint16_t readbyte = current_socket->LastByteRcvd - current_socket->LastByteRead;
         memcpy(param2, &current_socket->receive_buffer + current_socket->LastByteRead, readbyte);
-        current_socket->LastByteRead += readbyte;
+        current_socket->LastByteRead = (current_socket->LastByteRead + readbyte) & 0xFFFF;
         this->returnSystemCall(syscallUUID, readbyte);
     } else {
         memcpy(param2, &current_socket->receive_buffer + current_socket->LastByteRead, param3);
-        current_socket->LastByteRead += param3;
+        current_socket->LastByteRead = (current_socket->LastByteRead + param3) & 0xFFFF;
         this->returnSystemCall(syscallUUID, param3);
     }
 }
@@ -1073,7 +1090,8 @@ uint32_t TCPAssignment::fdFromKey(uint64_t key)
 }
 */
 
-void TCPAssignment::makeTCPHeader(struct tcp_header *TCPHeader, uint16_t srcPort, uint16_t destPort, uint32_t seqNum, uint32_t ackNum, unsigned char flags, uint16_t winSize) {
+void TCPAssignment::makeTCPHeader(struct tcp_header *TCPHeader, uint16_t srcPort, uint16_t destPort, uint32_t seqNum, uint32_t ackNum, unsigned char flags, uint16_t winSize)
+{
     TCPHeader->srcPort = srcPort;
     TCPHeader->destPort = destPort;
     TCPHeader->seqNum = htonl(seqNum);
@@ -1084,7 +1102,8 @@ void TCPAssignment::makeTCPHeader(struct tcp_header *TCPHeader, uint16_t srcPort
     TCPHeader->headerLength = 80;
 }
 
-void TCPAssignment::timerCallback(void* payload) {
+void TCPAssignment::timerCallback(void* payload)
+{
     // get key from payload
     uint64_t *key_ptr = (uint64_t*) payload;
     uint64_t key = *key_ptr;
@@ -1109,6 +1128,16 @@ void TCPAssignment::timerCallback(void* payload) {
         free((uint64_t *) payload);
     }
     return;
+}
+
+uint16_t TCPAssignment::usingBuffer(uint16_t LastByteSentOrRead, uint16_t LastByteAckedOrRcvd)
+{
+    uint16_t result = LastByteAckedOrRcvd - LastByteSentOrRead;
+    // abnormal case
+    if (result < 0) {
+        result = BUFFERSIZE + result;
+    } 
+    return result;
 }
 
 }

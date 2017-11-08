@@ -92,8 +92,13 @@ struct socket_info
     uint32_t ackNum;
 	UUID connectUUID;
 	// UUID closeUUID;
+	UUID writeUUID;
+	UUID readUUID;
 	UUID timerUUID;
 	struct accept_info* blocked_accept = NULL;
+
+	struct read_info* blocked_read = NULL;
+	struct write_info* blocked_write = NULL;
 
     uint16_t rwnd;
     // send buffer
@@ -104,7 +109,7 @@ struct socket_info
     uint8_t receive_buffer[BUFFERSIZE];
     uint16_t LastByteRead = 0;
     uint16_t LastByteRcvd = 0;
-    map<uint64_t, uint64_t> missPoint;
+    std::map<uint64_t, uint64_t> missPoint;
     uint16_t endPoint;
 
 };
@@ -118,6 +123,20 @@ struct accept_info
 	struct sockaddr* addr;
 	socklen_t* len;
 };
+// when read call is blocked
+struct read_info
+{
+	uint8_t* buffer;
+	int length;
+};
+// when write call is blocked
+struct write_info
+{
+	uint8_t* buffer;
+	int lenght;
+};
+
+// when write call is blocked
 
 class TCPAssignment : public HostModule, public NetworkModule, public SystemCallInterface, private NetworkLog, private TimerModule
 {
@@ -146,6 +165,7 @@ private:
     virtual void syscall_read(UUID syscallUUID, int pid, int param1, uint8_t* param2, int param3) final;
     virtual void syscall_write(UUID syscallUUID, int pid, int param1, uint8_t* param2, int param3) final;
     virtual void data_send(int length, struct socket_info* current_socket, struct tcp_header TCPHeader, uint8_t* tcp_packet) final;
+    virtual uint16_t usingBuffer(uint16_t LastByteSentOrRead, uint16_t LastByteAckedOrRcvd) final;
 
 public:
 	TCPAssignment(Host* host);
