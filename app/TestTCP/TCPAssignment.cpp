@@ -843,22 +843,54 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
         default:
         {
             if(current_socket->ackNum < recv_seq_number) {
-                memcpy(&current_socket->receive_buffer + current_socket->LastByteRcvd + recv_seq_number - current_socket->ackNum,
+                uint16_t LastByteRcvd = current_socket->LastByteRcvd;
+                uint16_t gap = (uint16_t) (recv_seq_number - current_socket->ackNum);
+                
+                memcpy(&current_socket->receive_buffer + LastByteRcvd + gap,
                         &tcp_packet + 54, tcp_data_length);
 
-                map<uint64_t, uint64_t>::iterator iter;
+                map<uint16_t, uint16_t>::iterator iter;
             	iter = current_socket->missPoint.find(LastByteRcvd);
 
                 if(iter == current_socket->missPoint.end()) {
-                    current_socket->missPoint.insert(pair<uint64_t, uint64_t>(LastbyteRcvd, LastByteRcvd + recv_seq_number - current_socket->ackNum));
-                    current_socket->endPoint = recv_seq_number + 
-                } else if(iter->second < recv_seq_number)
-
+                    current_socket->missPoint.insert(pair<uint16_t, uint16_t>(LastByteRcvd, LastByteRcvd + gap));
+                    current_socket->endPoint = LastByteRcvd + gap + tcp_data_length;
+                } else if(current_socket->endPoint <= LastByteRcvd + gap) {
+                    current_socket->missPoint.insert(pair<uint16_t, uint16_t>(current_socket->endPoint, LastByteRcvd + gap));
+                    current_socket->endPoint = LastByteRcvd + gap + tcp_data_length;
+                } else {
+                    map<uint16_t, uint16_t>::iterator iter2;
+                    for(iter2 = current_socket->missPoint.begin();
+                            iter2 != current_socket->missPoint.end(); iter2++) {
+                        if(iter2->first < LastByteRcvd + gap &&
+                                iter2->second > LastByteRcvd + gap + tcp_data_length) {
+                            current_socket->missPoint.insert(pair<uint16_t, uint16_t>(LastByteRcvd + gap + tcp_data_length, iter2->second));
+                            iter2->second = LastByteRcvd + gap;
+                            break;
+                        } else if(iter2->first == LastByteRcvd + gap &&
+                                iter2->second > LastByteRcvd + gap + tcp_data_length) {
+                            uint16_t iter2End = iter2->second;
+                            current_socket->missPoint.erase(iter2);
+                            current_socket->missPoint.insert(pair<uint16_t, uint16_t>(LastByteRcvd + gap + tcp_data_length, iter2End));
+                            break;
+                        } else if(iter2->first < LastByteRcvd + gap &&
+                                iter2->second == LastByteRcvd + gap + tcp_data_length) {
+                            iter2->second = LastByteRcvd + gap;
+                            break;
+                        } else if(iter2->first == LastByteRcvd + gap &&
+                                iter2->second == LastByteRcvd + gap + tcp_data_length) {
+                            current_socket->missPoint.erase(iter2);
+                            break;
+                        } else {
+                            continue;
+                        }
+                    }
+                }
 
                 uint32_t send_seq_number = current_socket->seqNum;
                 uint32_t send_ack_number = current_socket->ackNum;
                 makeTCPHeader(&my_packet_header, tcp_header.destPort, tcp_header.srcPort,
-                        send_seq_number, send_ack_number, ACK, current_socket->rwnd);
+                        send_seq_number, send_ack_number, ACK, WINDOWSIZE - current_socket->LastByteRcvd);
 
                // checksum
                 uint16_t checksum = calculateChecksum(src_ip, dest_ip, (uint8_t*)&my_packet_header, (uint16_t)20);
@@ -873,7 +905,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
                 uint32_t send_seq_number = current_socket->seqNum;
                 uint32_t send_ack_number = current_socket->ackNum;
                 makeTCPHeader(&my_packet_header, tcp_header.destPort, tcp_header.srcPort,
-                        send_seq_number, send_ack_number, ACK, current_socket->rwnd);
+                        send_seq_number, send_ack_number, ACK, WINDOWSIZE - current_socket->LastByteRcvd);
 
                // checksum
                 uint16_t checksum = calculateChecksum(src_ip, dest_ip, (uint8_t*)&my_packet_header, (uint16_t)20);
@@ -885,10 +917,40 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
                 this->sendPacket("IPv4", my_packet);                
 
             } else {
+                uint16_t LastByteRcvd = current_socket->LastByteRcvd;
+
+                memcpy(&current_socket->receive_buffer + LastByteRcvd,
+                        &tcp_packet + 54, tcp_data_length);
+
+                map<uint16_t, uint16_t>::iterator iter;
+            	iter = current_socket->missPoint.find(LastByteRcvd);
+
+                if(iter == current_socket->missPoint.end()) {
+                    current_socket->ackNum += tcp_data_length;
+                    current_socket->endPoint += tcp_data_length;
+                    current_socket->LastByteRcvd += tcp_data_length;
+                } else if(iter->second == LastByteRcvd + tcp_data_length) {
+                    current_socket->ackNum += current_socket->endPoint - LastByteRcvd;
+                    current_socket->LastByteRcvd = current_socket->endPoint;
+                } else if(iter->second > LastByteRcvd + tcp_data_length) {
+                    current_socket->ackNum += tcp_data_length;
+                    current_socket->LastByteRcvd += tcp_data_length;
+                }
+
+
                 uint32_t send_seq_number = current_socket->seqNum;
-                uint32_t send_ack_number = recv_seq_number + (uint32_t) tcp_data_length;
+                uint32_t send_ack_number = current_socket->ackNum;
                 makeTCPHeader(&my_packet_header, tcp_header.destPort, tcp_header.srcPort,
-                        send_seq_number, send_ack_number, ACK, WINDOWSIZE);
+                        send_seq_number, send_ack_number, ACK, WINDOWSIZE - current_socket->LastByteRcvd);
+
+               // checksum
+                uint16_t checksum = calculateChecksum(src_ip, dest_ip, (uint8_t*)&my_packet_header, (uint16_t)20);
+                my_packet_header.checksum = htons(checksum);
+
+                // write packet
+                my_packet->writeData(14 + 20, &my_packet_header, 20);
+                // send packet
+                this->sendPacket("IPv4", my_packet);
             }
         }
         this->freePacket(my_packet);
@@ -1028,12 +1090,13 @@ void TCPAssignment::syscall_read(UUID syscallUUID, int pid, int param1, uint8_t*
 
     if(iter == socket_info_map.end()) {
         this->returnSystemCall(syscallUUID, -1);
+        return;
     }
 
-    if(current_socket->LastByteRcvd == 0) {
+    if(current_socket->LastByteRcvd - current_socket->LastByteRead == 0) {
         return;
     } else if(current_socket->LastByteRcvd - current_socket->LastByteRead < param3) {
-        int readbyte = current_socket->LastByteRcvd - current_socket->LastByteRead;
+        uint16_t readbyte = current_socket->LastByteRcvd - current_socket->LastByteRead;
         memcpy(param2, &current_socket->receive_buffer + current_socket->LastByteRead, readbyte);
         current_socket->LastByteRead += readbyte;
         this->returnSystemCall(syscallUUID, readbyte);

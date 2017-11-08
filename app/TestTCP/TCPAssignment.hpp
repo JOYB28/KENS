@@ -92,6 +92,8 @@ struct socket_info
     uint32_t ackNum;
 	UUID connectUUID;
 	// UUID closeUUID;
+    UUID writeUUID;
+    UUID readUUID;
 	UUID timerUUID;
 	struct accept_info* blocked_accept = NULL;
 
@@ -104,7 +106,7 @@ struct socket_info
     uint8_t receive_buffer[BUFFERSIZE];
     uint16_t LastByteRead = 0;
     uint16_t LastByteRcvd = 0;
-    map<uint64_t, uint64_t> missPoint;
+    std::map<uint16_t, uint16_t> missPoint;
     uint16_t endPoint;
 
 };
