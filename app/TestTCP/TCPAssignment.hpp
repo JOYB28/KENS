@@ -105,12 +105,21 @@ struct socket_info
     uint8_t send_buffer[BUFFERSIZE];
     uint16_t LastByteSent = 0;
     uint16_t LastByteAcked = 0;
+    uint32_t sendBase;
+    uint8_t duplicate;
+    // block write
+    uint8_t* write_pointer;
+    int write_length;
+    
     //receive buffer
     uint8_t receive_buffer[BUFFERSIZE];
     uint16_t LastByteRead = 0;
     uint16_t LastByteRcvd = 0;
-    std::map<uint64_t, uint64_t> missPoint;
+    std::map<uint16_t, uint16_t> missPoint;
     uint16_t endPoint;
+    // block read
+    uint8_t* read_pointer;
+    int read_length;
 
 };
 
@@ -164,8 +173,11 @@ private:
     // KENS3
     virtual void syscall_read(UUID syscallUUID, int pid, int param1, uint8_t* param2, int param3) final;
     virtual void syscall_write(UUID syscallUUID, int pid, int param1, uint8_t* param2, int param3) final;
-    virtual void data_send(int length, struct socket_info* current_socket, struct tcp_header TCPHeader, uint8_t* tcp_packet) final;
+    virtual void data_send(int length, uint16_t offset, uint64_t key) final;
     virtual uint16_t usingBuffer(uint16_t LastByteSentOrRead, uint16_t LastByteAckedOrRcvd) final;
+    virtual void read_memcpy(uint8_t *dest, uint8_t *source, int length, uint16_t source_length, int offset) final;
+    virtual void write_memcpy(uint8_t *dest, uint8_t *source, int length, uint16_t source_length, int offset) final;
+    virtual uint16_t write(UUID syscallUUID, uint64_t key, uint8_t* buffer, int length) final;
 
 public:
 	TCPAssignment(Host* host);

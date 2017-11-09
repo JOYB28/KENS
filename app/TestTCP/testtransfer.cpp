@@ -21,6 +21,8 @@
 #include <gtest/gtest.h>
 #include "testenv.hpp"
 
+
+
 extern "C"
 {
 #include <stdlib.h>
@@ -232,6 +234,7 @@ protected:
 				{
 					total_size += write_byte;
 					remaining -= write_byte;
+					printf("wb: %d\n", write_byte);
 					EXPECT_GE(remaining, 0);
 					if(remaining == 0)
 						break;
