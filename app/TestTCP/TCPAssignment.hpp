@@ -66,6 +66,7 @@ struct connection_info
 
 	uint32_t seqNum;
 	uint32_t ackNum;
+	uint16_t rwnd;
 };
 
 // socket information
@@ -172,12 +173,12 @@ private:
 
     // KENS3
     virtual void syscall_read(UUID syscallUUID, int pid, int param1, uint8_t* param2, int param3) final;
-    virtual void syscall_write(UUID syscallUUID, int pid, int param1, uint8_t* param2, int param3) final;
+    virtual void syscall_write(UUID syscallUUID, int pid, int param1, void* param2, int param3) final;
     virtual void data_send(int length, uint16_t offset, uint64_t key) final;
-    virtual uint16_t usingBuffer(uint16_t LastByteSentOrRead, uint16_t LastByteAckedOrRcvd) final;
+    virtual uint16_t usingBuffer(uint16_t LastByteAckedOrRead, uint16_t LastByteSentOrRcvd) final;
     virtual void read_memcpy(uint8_t *dest, uint8_t *source, int length, uint16_t source_length, int offset) final;
     virtual void write_memcpy(uint8_t *dest, uint8_t *source, int length, uint16_t source_length, int offset) final;
-    virtual uint16_t write(UUID syscallUUID, uint64_t key, uint8_t* buffer, int length) final;
+    virtual int write(UUID syscallUUID, uint64_t key, uint8_t* buffer, int length) final;
 
 public:
 	TCPAssignment(Host* host);

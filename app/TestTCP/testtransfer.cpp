@@ -234,7 +234,6 @@ protected:
 				{
 					total_size += write_byte;
 					remaining -= write_byte;
-					printf("wb: %d\n", write_byte);
 					EXPECT_GE(remaining, 0);
 					if(remaining == 0)
 						break;
@@ -258,6 +257,7 @@ protected:
 				{
 					for(int j=0; j<buffer_size - remaining; j++)
 					{
+						//printf("%d\n", j);
 						EXPECT_EQ(send_buffer[j], recv_buffer[j]);
 					}
 				}
