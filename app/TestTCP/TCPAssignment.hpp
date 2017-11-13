@@ -91,23 +91,33 @@ struct socket_info
 
 	uint32_t seqNum;
     uint32_t ackNum;
-	UUID connectUUID;
-	// UUID closeUUID;
-	UUID writeUUID;
-	UUID readUUID;
-	UUID timerUUID;
-	struct accept_info* blocked_accept = NULL;
+    uint32_t seqNumForLA;
+    uint32_t seqNumForRT;
 
+	UUID connectUUID = 0;
+	UUID writeUUID = 0;
+	UUID readUUID = 0;
+	UUID timerUUID = 0;
+	UUID StimerUUID = 0;
+	UUID CtimerUUID = 0;
+
+	Packet* SYN_packet = NULL;
+	Packet* SYN_ACK_packet = NULL;
+	Packet* FIN_packet = NULL;
+	Packet* ACKforSYN_ACK_packet = NULL;
+
+	int retransmitCount = 0;
+
+	struct accept_info* blocked_accept = NULL;
 	struct read_info* blocked_read = NULL;
 	struct write_info* blocked_write = NULL;
 
-    uint16_t rwnd;
     // send buffer
     uint8_t send_buffer[BUFFERSIZE];
     uint16_t LastByteSent = 0;
     uint16_t LastByteAcked = 0;
     uint32_t sendBase;
-    uint8_t duplicate;
+    int duplicate;
     // block write
     uint8_t* write_pointer;
     int write_length;
@@ -121,6 +131,13 @@ struct socket_info
     // block read
     uint8_t* read_pointer;
     int read_length;
+
+    //congestion
+    uint16_t rwnd;
+    uint16_t cwnd = 512;
+    uint16_t ssthresh = BUFFERSIZE;
+
+    uint16_t real_cwnd;
 
 };
 
@@ -174,11 +191,13 @@ private:
     // KENS3
     virtual void syscall_read(UUID syscallUUID, int pid, int param1, uint8_t* param2, int param3) final;
     virtual void syscall_write(UUID syscallUUID, int pid, int param1, void* param2, int param3) final;
-    virtual void data_send(int length, uint16_t offset, uint64_t key) final;
+    virtual void data_send(int length, uint16_t offset, uint64_t key, int mode) final;
     virtual uint16_t usingBuffer(uint16_t LastByteAckedOrRead, uint16_t LastByteSentOrRcvd) final;
     virtual void read_memcpy(uint8_t *dest, uint8_t *source, int length, uint16_t source_length, int offset) final;
     virtual void write_memcpy(uint8_t *dest, uint8_t *source, int length, uint16_t source_length, int offset) final;
     virtual int write(UUID syscallUUID, uint64_t key, uint8_t* buffer, int length) final;
+    virtual uint16_t retransmit(uint64_t key) final;
+    virtual uint16_t overflow(uint16_t value) final;
 
 public:
 	TCPAssignment(Host* host);

@@ -131,6 +131,7 @@ protected:
 				while((read_byte = read(client_fd, recv_buffer + (buffer_size - remaining), remaining)) >= 0)
 				{
 					total_size += read_byte;
+					//printf("total_size: %ld\n", total_size);
 					remaining -= read_byte;
 					EXPECT_GE(remaining, 0);
 					if(remaining == 0)
@@ -257,7 +258,6 @@ protected:
 				{
 					for(int j=0; j<buffer_size - remaining; j++)
 					{
-						//printf("%d\n", j);
 						EXPECT_EQ(send_buffer[j], recv_buffer[j]);
 					}
 				}

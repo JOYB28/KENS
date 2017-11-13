@@ -19,6 +19,10 @@
 #define WINDOWSIZE 51200
 #define BUFFERSIZE 51200
 #define MSS 512
+#define DEFAULT_RTT 100000000
+#define DEFAULT_TIME_WAIT 1000000000
+#define ALPHA 0.125
+#define BETA 0.25
 
 // 20150547 Lee Sangmin
 // 20160140 Kim Yoonseo,
@@ -108,8 +112,22 @@ void TCPAssignment::syscall_socket(UUID syscallUUID, int pid, int param1, int pa
     //cout << "socket!!!!\n";
 	// file descriptor
 	int fd = this->createFileDescriptor(pid);
+    //cout << "fd: " << fd << endl;
 	// initialize arguments in struct socket_info
 	uint64_t key = makePidFdKey(pid, fd);
+    map<uint64_t, struct socket_info *>::iterator iter;
+    iter = socket_info_map.find(key);
+    //struct socket_info * current_socket = iter->second;
+    // not exist socket
+    
+    while (iter != socket_info_map.end()) {
+        fd = this->createFileDescriptor(pid);
+        //cout << "fd: " << fd << endl;
+        key = makePidFdKey(pid, fd);
+        iter = socket_info_map.find(key);
+    }
+
+    
 
 	struct socket_info *info = new struct socket_info;
     info->pid = pid;
@@ -119,14 +137,13 @@ void TCPAssignment::syscall_socket(UUID syscallUUID, int pid, int param1, int pa
     // state to listen
     info->state = STATE::LISTEN;
 	socket_info_map.insert(pair<uint64_t, struct socket_info *>(key, info));
-
+    //cout << "socket fin\n";
 	this->returnSystemCall(syscallUUID, fd);
 }
 // close()
 void TCPAssignment::syscall_close(UUID syscallUUID, int pid, int param1)
 {
-    //cout << "close!!!!\n";
-	// file descriptor
+    // file descriptor
 	int fd = param1;
 	uint64_t key = makePidFdKey(pid, fd);
     // find socket with key
@@ -172,6 +189,19 @@ void TCPAssignment::syscall_close(UUID syscallUUID, int pid, int param1)
         } else if (current_socket->state == static_cast<int> (STATE::CLOSE_WAIT)) {
             current_socket->state = LAST_ACK;
         }
+
+        if(current_socket->timerUUID == 0) {
+            // set timer
+            Time current_time = this->getHost()->getSystem()->getCurrentTime();
+
+            // store our key in new pointer and put it in payload for addTimer
+            uint64_t* timerKey = new uint64_t;
+            *timerKey = key;
+            current_socket->timerUUID = TimerModule::addTimer(timerKey, current_time + (Time)DEFAULT_RTT);
+            // save packet for retransmission
+            current_socket->FIN_packet = this->clonePacket(my_packet);
+        }
+        //cout << "BYE!!!!\n";
         
         // send packet
         this->sendPacket("IPv4", my_packet);
@@ -286,6 +316,7 @@ void TCPAssignment::syscall_listen(UUID syscallUUID, int pid, int fd, int bl)
 void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int param1, struct sockaddr* addr, socklen_t len)
 {
     //cout << "connect!!!\n";
+    //cout << "fd: " << param1 << endl;
     // client socket
  	struct sockaddr_in* addr_in = (struct sockaddr_in *) addr;
 
@@ -346,8 +377,19 @@ void TCPAssignment::syscall_connect(UUID syscallUUID, int pid, int param1, struc
     myPacket->writeData(14+20, &TCPHeader, 20);
     // change state
     current_socket->state = SYN_SENT;
+    if(current_socket->CtimerUUID == 0) {
+        // set timer
+        Time current_time = this->getHost()->getSystem()->getCurrentTime();
+
+        // store our key in new pointer and put it in payload for addTimer
+        uint64_t* timerKey = new uint64_t;
+        *timerKey = key;
+        current_socket->CtimerUUID = TimerModule::addTimer(timerKey, current_time + (Time)DEFAULT_RTT);
+        // save packet for retransmission
+        current_socket->SYN_packet = this->clonePacket(myPacket);
+    }
     // send packet
-    sendPacket("IPv4", myPacket);
+    this->sendPacket("IPv4", myPacket);
 }
 
 void TCPAssignment::syscall_accept(UUID syscallUUID, int pid, int param1, struct sockaddr* addr, socklen_t* len) {
@@ -414,6 +456,7 @@ void TCPAssignment::syscall_accept(UUID syscallUUID, int pid, int param1, struct
         new_socket->family = AF_INET;
         new_socket->type = SOCK_STREAM;
         new_socket->rwnd = cnt_info->rwnd;
+        new_socket->sendBase = cnt_info->seqNum;
         ///////////
         new_socket->seqNum = cnt_info->seqNum;
         new_socket->ackNum = cnt_info->ackNum;
@@ -424,7 +467,7 @@ void TCPAssignment::syscall_accept(UUID syscallUUID, int pid, int param1, struct
 
         iter->second->established_lst.pop_front();
 
-    	uint64_t key = makePidFdKey(pid, socketfd);
+    	   uint64_t key = makePidFdKey(pid, socketfd);
 	   	socket_info_map.insert(pair<uint64_t, struct socket_info *>(key, new_socket));
 
         this->returnSystemCall(syscallUUID, socketfd);
@@ -462,6 +505,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
         this->freePacket(packet);
         return;
     }
+
     // define my packet (sending packet)
     Packet* my_packet = this->clonePacket(packet);
     // tcp packet header for my packet (sending packet)
@@ -502,13 +546,14 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
     // can't find right socket
     // need to deal with when key is 111111...1 = -1
     if ((int64_t)key == -1) {
-    	this->freePacket(packet);
-    	this->freePacket(my_packet);
-    	return;
+        this->freePacket(packet);
+        this->freePacket(my_packet);
+        return;
     }
     // finally found
     iter = socket_info_map.find(key);
     struct socket_info * current_socket = iter->second;
+    //cout << "state: " << current_socket->state <<endl;
 
     uint32_t recv_seq_number = ntohl(tcp_header.seqNum);
     uint32_t recv_ack_number = ntohl(tcp_header.ackNum);
@@ -523,27 +568,29 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
     	// SYN packet
     	case(0x2):
         {
+            //cout << "receive SYN!!!! \n";
             /*
                 SERVER SIDE
             */
-    		// if number of pending is backlog, reject the packet
-    		if (current_socket->pending_lst.size() == current_socket->backlog) {
-    			this->freePacket(packet);
-    			this->freePacket(my_packet);
-    			return;
-  			}
+            // if number of pending is backlog, reject the packet
+            if (current_socket->pending_lst.size() == current_socket->backlog) {
+                //cout << "backlog!!!!!\n";
+                this->freePacket(packet);
+                this->freePacket(my_packet);
+                return;
+            }
             // choose init sequence number randomly
             uint32_t send_seq_number = (rand() % 0xffffffff);
             uint32_t send_ack_number = recv_seq_number + 1;
 
-  			// make new connection
-  			struct connection_info *new_connection = new struct connection_info;
+            // make new connection
+            struct connection_info *new_connection = new struct connection_info;
             // new connection's src is dest in received tcp header and vice versa
-  			new_connection->srcPort = tcp_header.destPort;
-  			new_connection->destPort = tcp_header.srcPort;
-  			new_connection->srcIP = dest_ip;
-  			new_connection->destIP = src_ip;
-              new_connection->rwnd = ntohs(tcp_header.windowSize);
+            new_connection->srcPort = tcp_header.destPort;
+            new_connection->destPort = tcp_header.srcPort;
+            new_connection->srcIP = dest_ip;
+            new_connection->destIP = src_ip;
+            new_connection->rwnd = ntohs(tcp_header.windowSize);
 
             // push it to pending list for current_socket
   			current_socket->pending_lst.push_back(new_connection);
@@ -565,25 +612,57 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
             my_packet->writeData(14 + 20, &my_packet_header, 20);
             // change state
             current_socket->state = SYN_RCVD;
+            //cout << "StimerUUID: " << current_socket->StimerUUID << endl;
+            
+            if(current_socket->StimerUUID == 0) {
+                //cout << "Hi\n";
+                // set timer
+                Time current_time = this->getHost()->getSystem()->getCurrentTime();
+
+                // store our key in new pointer and put it in payload for addTimer
+                uint64_t* timerKey = new uint64_t;
+                *timerKey = key;
+                current_socket->StimerUUID = TimerModule::addTimer(timerKey, current_time + (Time)DEFAULT_RTT);
+                // save packet for retransmission
+                current_socket->SYN_ACK_packet = this->clonePacket(my_packet);
+            }
+            //cout << "SYN_ACK_packet sent \n";
             // send packet
             this->sendPacket(fromModule, my_packet);
-            return;
+            break;
         }
     	// SYN_ACK packet
     	case(0x12):
         {
+            //cout << "SYN_ACK receive \n";
+            this->cancelTimer(current_socket->CtimerUUID);
+            if (current_socket->SYN_packet != NULL) {
+                //this->cancelTimer(current_socket->CtimerUUID);
+                current_socket->CtimerUUID = 0;
+                this->freePacket(current_socket->SYN_packet);
+                current_socket->SYN_packet = NULL;
+                current_socket->retransmitCount = 0;             
+            }
+
     		// client side
 
     		// reject packet if it's state is not SYN_SENT
-    		if (current_socket->state != static_cast<int> (SYN_SENT)) {
-    			this->freePacket(packet);
-    			this->freePacket(my_packet);
-    			return;
-    		}
+            if (current_socket->state != static_cast<int> (SYN_SENT)) {
+                // if SYN_ACK comes a lot
+                if (current_socket->ACKforSYN_ACK_packet != NULL) {
+                    Packet* ACKforSYN_ACK_packet = this->clonePacket(current_socket->ACKforSYN_ACK_packet);
+                    this->sendPacket(fromModule, ACKforSYN_ACK_packet);
+                }
+                
+                this->freePacket(packet);
+                this->freePacket(my_packet);
+                return;
+            }
     		/*
     			send ACK packet to server
     			with ack_number
     		*/
+            current_socket->sendBase = current_socket->seqNum;
             uint32_t send_ack_number = recv_seq_number + 1;
             uint32_t send_seq_number = current_socket->seqNum;
             uint16_t windowsize = BUFFERSIZE - usingBuffer(current_socket->LastByteRcvd, current_socket->LastByteRcvd);
@@ -599,13 +678,16 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
             // write packet
             my_packet->writeData(14 + 20, &my_packet_header, 20);
             // change state
-    		current_socket->state = ESTABLISHED;
+            current_socket->state = ESTABLISHED;
+            // save ACK for SYN_ACK_packet
+            current_socket->ACKforSYN_ACK_packet = this->clonePacket(my_packet);
             // send packet
+            //cout << "send ACK for SYN_ACK\n";
             this->sendPacket("IPv4", my_packet);
 
             // unblock the connect syscall
             this->returnSystemCall(current_socket->connectUUID, 0);
-    		return;
+            break;
         }
     	// ACK
     	case(0x10):
@@ -643,6 +725,17 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
 
             // SYN_RCVD (server)
             if (current_socket->state == static_cast<int> (STATE::SYN_RCVD)) {
+                //cout << "receive ACK (state: SYN_RCVD)\n";
+                if(current_socket->SYN_ACK_packet != NULL) {
+                    //cout << "asdf\n";
+                    this->cancelTimer(current_socket->StimerUUID);
+                    this->freePacket(current_socket->SYN_ACK_packet);
+                    current_socket->SYN_ACK_packet = NULL;
+                    current_socket->StimerUUID = 0;
+                }
+
+                
+
                 list<connection_info *>::iterator iter;
                 for(iter = current_socket->pending_lst.begin(); 
                     iter != current_socket->pending_lst.end(); iter ++) {
@@ -678,6 +771,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
                     new_socket->family = AF_INET;
                     new_socket->type = SOCK_STREAM;
                     new_socket->rwnd = cnt_info->rwnd;
+                    new_socket->sendBase = cnt_info->seqNum;
                     ///////////
                     new_socket->seqNum = cnt_info->seqNum;
                     new_socket->ackNum = cnt_info->ackNum;
@@ -691,89 +785,179 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
                     socket_info_map.insert(pair<uint64_t, struct socket_info *>(key, new_socket));
                     this->returnSystemCall(current_socket->blocked_accept->acceptUUID, socketfd);
                 }
+                this->freePacket(my_packet);
                 break;
 
             } 
             // FIN_WAIT_1
             else if (current_socket->state == static_cast<int> (STATE::FIN_WAIT_1)) {
-                current_socket->state = FIN_WAIT_2;
+                if (current_socket->FIN_packet != NULL) {
+                    this->cancelTimer(current_socket->timerUUID);
+                    current_socket->timerUUID = 0;
+                    this->freePacket(current_socket->FIN_packet);
+                    current_socket->FIN_packet = NULL;
+                }
                 
+
+                current_socket->state = FIN_WAIT_2;
+                this->freePacket(my_packet);
             }
             // LAST_ACK 
             else if (current_socket->state == static_cast<int> (STATE::LAST_ACK)) {
+                if (current_socket->FIN_packet != NULL) {
+                    this->cancelTimer(current_socket->timerUUID);
+                    current_socket->timerUUID = 0;
+                    this->freePacket(current_socket->FIN_packet);
+                    current_socket->FIN_packet = NULL;
+                }
+                
+
                 current_socket->state = CLOSED;
                 // remove filedecriptor
                 this->removeFileDescriptor(current_socket->pid, current_socket->fd);
                 delete iter->second;
                 socket_info_map.erase(iter);
+                this->freePacket(my_packet);
             }
             // CLOSING
             else if (current_socket->state == static_cast<int> (STATE::CLOSING)) {
+                if (current_socket->FIN_packet != NULL){
+                    this->cancelTimer(current_socket->timerUUID);
+                    current_socket->timerUUID = 0;
+                    this->freePacket(current_socket->FIN_packet);
+                    current_socket->FIN_packet = NULL;
+                }
+                
+
+                current_socket->state = TIME_WAIT;
+
                 Time current_time = this->getHost()->getSystem()->getCurrentTime();
                 // store our key in new pointer and put it in payload for addTimer
                 uint64_t* timerKey = new uint64_t;
                 *timerKey = key;
-                current_socket->timerUUID = TimerModule::addTimer(timerKey, current_time + (Time)1000000000);
+                current_socket->timerUUID = TimerModule::addTimer(timerKey, current_time + (Time)DEFAULT_TIME_WAIT);
+                this->freePacket(my_packet);
             }
             // ESTABLISHED
             else if (current_socket->state == static_cast<int> (STATE::ESTABLISHED)) {
-                // data received
-                // when write call is blocked
+                // just ACK for data, no data
                 if (tcp_data_length == 0) {
-                    if (current_socket->writeUUID != 0xFFFFFFFFFFFFFFFF) {
-                        //cout << "fuck!!\n";
-                        uint16_t sent_byte = write(current_socket->writeUUID, key,
-                            current_socket->write_pointer, current_socket->write_length);
-                         //cout << "tcp_data_length: " << tcp_data_length << endl;
-                         //cout << "current_socket->write_length: " << current_socket->write_length << endl;
-                        if (current_socket->writeUUID == 0xFFFFFFFFFFFFFFFF) {
-                            this->returnSystemCall(current_socket->writeUUID, sent_byte);
-                        }
-                    }
-
+                    //cout << "ACK received for data sent\n";
+                    //cout << "writeUUID: " << current_socket->writeUUID << endl;
+                    //cout << "recv_ack_number: " << recv_ack_number << endl;
+                    //cout << "current_socket->sendBase: " << current_socket->sendBase << endl;
+                    // ACK received
                     if (recv_ack_number > current_socket->sendBase) {
+                        /*
+                        cout << "seq_number: " << current_socket->seqNum << endl;
+                        cout << "ack_number: " << current_socket->ackNum << endl;
+                        cout << "recv_ack_number: " << recv_ack_number << endl;
+                        cout << "sendBase: " << current_socket->sendBase << endl;
+                        cout << "Hi4\n";
+                        */
+                        
+                        //cout << "using_buffer: " << using_buffer << endl;
                         uint32_t gap = recv_ack_number - current_socket->sendBase;
                         current_socket->sendBase = recv_ack_number;
-                        current_socket->LastByteAcked = (current_socket->LastByteAcked + gap) % 0xFFFFFFFF;
+                        current_socket->LastByteAcked = overflow(current_socket->LastByteAcked + gap);
                         current_socket->duplicate = 0;
+                        current_socket->seqNumForLA = recv_ack_number;
+
+                        //uint16_t using_buffer = usingBuffer(current_socket->LastByteAcked, current_socket->LastByteSent);
+                        //cout << "changed LastByteAcked1: " << current_socket->LastByteAcked << endl;
+                        //cout << "seqNumForLA: " << recv_ack_number << endl;
+                        // cancel timer
+
+                        //cout << "LastByteAcked: " << current_socket->LastByteAcked << endl;
+                        //cout << "LastByteSent: " << current_socket->LastByteSent << endl;
+                        //cout << "cwnd: " << current_socket->cwnd << endl;
+                        if (current_socket->cwnd < current_socket->ssthresh) {
+                            current_socket->cwnd += MSS;
+                        }
+                        
+
+                        this->cancelTimer(current_socket->timerUUID);
+                        // new timer
+                        if (current_socket->LastByteAcked != current_socket->LastByteSent) {
+                            uint64_t* timerKey = new uint64_t;
+                            *timerKey = key;
+                            current_socket->timerUUID = TimerModule::addTimer(timerKey, (Time)DEFAULT_RTT);
+                        } else {
+                            if (current_socket->cwnd < current_socket->ssthresh ) {
+                                //cout << "double cwnd\n";
+                                current_socket->real_cwnd *= 2;
+                            } else {
+                                if (current_socket->cwnd < BUFFERSIZE - MSS) {
+                                    current_socket->cwnd += MSS;
+                                    current_socket->real_cwnd += MSS;
+                                }
+                            }
+                        }
+
+                        // when write call is blocked
+                        if (current_socket->writeUUID != 0) {
+                            //cout << "Hi\n";
+                            //cout << "blocked write_length: " << current_socket->write_length << endl;
+                            int sent_byte = write(current_socket->writeUUID, key,
+                                current_socket->write_pointer, current_socket->write_length);
+                            //cout << "writeUUID: " << current_socket->writeUUID << endl;
+                            //cout << "sent_byte: " << sent_byte << endl;
+                            if (sent_byte != -1) {
+                                //cout << "Hi1\n";
+                                this->returnSystemCall(current_socket->writeUUID, sent_byte);
+                                this->freePacket(packet);
+                                this->freePacket(my_packet);
+                                current_socket->writeUUID = 0;
+                                return;
+                            }
+                            //cout << "writeUUID: " << current_socket->writeUUID << endl;
+                            this->freePacket(my_packet);
+                            return;
+
+                        }
                     } else {
                         current_socket->duplicate += 1;
                     }
+                    //cout << "duplicate: " << current_socket->duplicate << endl;
 
                     if (current_socket->duplicate == 3) {
+                        current_socket->cwnd = current_socket->real_cwnd/2;
+                        
+                        current_socket->ssthresh = current_socket->cwnd;
+                        current_socket->cwnd += 3*MSS;
+                        current_socket->real_cwnd = current_socket->cwnd;
+
+
                         // fast retransmit
-                        int write_byte = usingBuffer(current_socket->LastByteSent, current_socket->LastByteAcked);
-                        current_socket->seqNum = current_socket->seqNum - write_byte;
-                        struct tcp_header TCPHeader;
-
-                        while (write_byte > 0) {
-                            // write_byte is larger than MSS
-                            if (write_byte >= MSS) {
-                                // encapsulate that data and send it
-                                // data_send(MSS, current_socket->LastByteSent ,current_socket, TCPHeader, tcp_packet)
-                                data_send(MSS, current_socket->LastByteSent - write_byte,
-                                    key);
-                                write_byte -= MSS;
-
-                            } else {
-                                // last part for sending
-                                // encapsulate that data and send it
-                                data_send(write_byte, current_socket->LastByteSent - write_byte,
-                                    key);
-                                write_byte = 0;
-
-                            }
+                        uint16_t sent_byte = retransmit(key);
+                        if (sent_byte > 0) {
+                            // set timer
+                            // store our key in new pointer and put it in payload for addTimer
+                            uint64_t* timerKey = new uint64_t;
+                            *timerKey = key;
+                            current_socket->timerUUID = TimerModule::addTimer(timerKey, (Time)DEFAULT_RTT);
                         }
+                        //cout << "sent_byte: " << sent_byte << endl;
+                        current_socket->duplicate = 0;
                     }
-                } else {
+                    //cout << "LastByteSent: " << current_socket->LastByteSent << endl;
+                    //cout << "LastByteAcked2: " << current_socket->LastByteAcked << endl;
+                } 
+                // data received
+                else {
                     //cout << "data received with ACK!!!!!\n";
-                    if (current_socket->readUUID != 0xFFFFFFFFFFFFFFFF) {
+                    //cout << "readUUID: " << current_socket->readUUID << endl;
+                    /*
+                    if (current_socket->readUUID != 0) {
+                        cout << "Hi\n";
                         if (tcp_data_length <= current_socket->read_length) {
+                            cout << "All\n";
                             //cout << "tcp_data_length: " << tcp_data_length << endl;
-                            //cout << "current_socket->read_length: " << current_socket->read_length << endl; 
+                            //cout << "current_socket->read_length: " << current_socket->read_length << endl;
                             memcpy(current_socket->read_pointer, tcp_packet+20, tcp_data_length);
                             this->returnSystemCall(current_socket->readUUID, (int) tcp_data_length);
                         } else {
+                            cout << "Part\n";
                             //cout << "hihihih\n";
                             //cout << "tcp_data_length: " << tcp_data_length << endl;
                             //cout << "current_socket->read_length: " << current_socket->read_length << endl;
@@ -785,90 +969,106 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
                             //cout << "after write_memcpy: " << current_socket->LastByteRcvd << endl;
                             this->returnSystemCall(current_socket->readUUID, current_socket->read_length);
                         }
-                        current_socket->readUUID = -1;
+                        current_socket->readUUID = 0;
                         current_socket->ackNum = (current_socket->ackNum + tcp_data_length) & 0xFFFFFFFF;
-                    } else {
-                        //cout << "1\n";
-                        // incoming packet's seq number is larger than expected seq number
-                        // save in missing point 
-                        if (current_socket->ackNum < recv_seq_number) {
-                            //cout << "2\n";
-                            uint16_t LastByteRcvd = current_socket->LastByteRcvd;
-                            uint16_t gap = (uint16_t) (recv_seq_number - current_socket->ackNum);
-                            
-                            write_memcpy(current_socket->receive_buffer, tcp_packet + 20, 
-                                tcp_data_length, BUFFERSIZE, current_socket->LastByteRcvd);
+                    }
+                    */ 
+                    // first, save in buffer
 
-                            map<uint16_t, uint16_t>::iterator iter;
-                            iter = current_socket->missPoint.find(LastByteRcvd);
+                    //cout << "current_socket->ackNum: " << current_socket->ackNum << endl;
+                    //cout << "recv_seq_number: " << recv_seq_number << endl;
+                    //cout << "1\n";
+                    // incoming packet's seq number is larger than expected seq number
+                    // save in missing point 
+                    if (current_socket->ackNum < recv_seq_number) {
+                        cout << "expected ackNum < recv_seq_num\n";
+                        uint16_t LastByteRcvd = current_socket->LastByteRcvd;
+                        uint16_t gap = (uint16_t) (recv_seq_number - current_socket->ackNum);
+                        
+                        write_memcpy(current_socket->receive_buffer, tcp_packet + 20, 
+                            tcp_data_length, BUFFERSIZE, current_socket->LastByteRcvd);
 
-                            if (iter == current_socket->missPoint.end()) {
-                                current_socket->missPoint.insert(pair<uint16_t, uint16_t>(LastByteRcvd, LastByteRcvd + gap));
-                                current_socket->endPoint = LastByteRcvd + gap + tcp_data_length;
-                            } else if (current_socket->endPoint <= LastByteRcvd + gap) {
-                                current_socket->missPoint.insert(pair<uint16_t, uint16_t>(current_socket->endPoint, LastByteRcvd + gap));
-                                current_socket->endPoint = LastByteRcvd + gap + tcp_data_length;
-                            } else {
-                                map<uint16_t, uint16_t>::iterator iter2;
-                                for(iter2 = current_socket->missPoint.begin();
-                                        iter2 != current_socket->missPoint.end(); iter2++) {
-                                    if(iter2->first < LastByteRcvd + gap &&
-                                            iter2->second > LastByteRcvd + gap + tcp_data_length) {
-                                        current_socket->missPoint.insert(pair<uint16_t, uint16_t>(LastByteRcvd + gap + tcp_data_length, iter2->second));
-                                        iter2->second = LastByteRcvd + gap;
-                                        break;
-                                    } else if(iter2->first == LastByteRcvd + gap &&
-                                            iter2->second > LastByteRcvd + gap + tcp_data_length) {
-                                        uint16_t iter2End = iter2->second;
-                                        current_socket->missPoint.erase(iter2);
-                                        current_socket->missPoint.insert(pair<uint16_t, uint16_t>(LastByteRcvd + gap + tcp_data_length, iter2End));
-                                        break;
-                                    } else if(iter2->first < LastByteRcvd + gap &&
-                                            iter2->second == LastByteRcvd + gap + tcp_data_length) {
-                                        iter2->second = LastByteRcvd + gap;
-                                        break;
-                                    } else if(iter2->first == LastByteRcvd + gap &&
-                                            iter2->second == LastByteRcvd + gap + tcp_data_length) {
-                                        current_socket->missPoint.erase(iter2);
-                                        break;
-                                    } else {
-                                        continue;
-                                    }
+                        map<uint16_t, uint16_t>::iterator iter;
+                        iter = current_socket->missPoint.find(LastByteRcvd);
+
+                        if (iter == current_socket->missPoint.end()) {
+                            current_socket->missPoint.insert(pair<uint16_t, uint16_t>(LastByteRcvd, LastByteRcvd + gap));
+                            current_socket->endPoint = LastByteRcvd + gap + tcp_data_length;
+                        } else if (current_socket->endPoint <= LastByteRcvd + gap) {
+                            current_socket->missPoint.insert(pair<uint16_t, uint16_t>(current_socket->endPoint, LastByteRcvd + gap));
+                            current_socket->endPoint = LastByteRcvd + gap + tcp_data_length;
+                        } else {
+                            map<uint16_t, uint16_t>::iterator iter2;
+                            for(iter2 = current_socket->missPoint.begin();
+                                    iter2 != current_socket->missPoint.end(); iter2++) {
+                                if(iter2->first < LastByteRcvd + gap &&
+                                        iter2->second > LastByteRcvd + gap + tcp_data_length) {
+                                    current_socket->missPoint.insert(pair<uint16_t, uint16_t>(LastByteRcvd + gap + tcp_data_length, iter2->second));
+                                    iter2->second = LastByteRcvd + gap;
+                                    break;
+                                } else if(iter2->first == LastByteRcvd + gap &&
+                                        iter2->second > LastByteRcvd + gap + tcp_data_length) {
+                                    uint16_t iter2End = iter2->second;
+                                    current_socket->missPoint.erase(iter2);
+                                    current_socket->missPoint.insert(pair<uint16_t, uint16_t>(LastByteRcvd + gap + tcp_data_length, iter2End));
+                                    break;
+                                } else if(iter2->first < LastByteRcvd + gap &&
+                                        iter2->second == LastByteRcvd + gap + tcp_data_length) {
+                                    iter2->second = LastByteRcvd + gap;
+                                    break;
+                                } else if(iter2->first == LastByteRcvd + gap &&
+                                        iter2->second == LastByteRcvd + gap + tcp_data_length) {
+                                    current_socket->missPoint.erase(iter2);
+                                    break;
+                                } else {
+                                    continue;
                                 }
                             }
-                        } else if (current_socket->ackNum == recv_seq_number) {
-                            // comes here in reliable network
-                            //cout << "data comes\n";
-                            uint16_t LastByteRcvd = current_socket->LastByteRcvd;
+                        }
+                    } else if (current_socket->ackNum == recv_seq_number) {
+                        // comes here in reliable network
+                        //cout << "good data comes\n";
+                        uint16_t LastByteRcvd = current_socket->LastByteRcvd;
 
-                            write_memcpy(current_socket->receive_buffer, tcp_packet+20, tcp_data_length, BUFFERSIZE, current_socket->LastByteRcvd);
+                        write_memcpy(current_socket->receive_buffer, tcp_packet+20, tcp_data_length, BUFFERSIZE, current_socket->LastByteRcvd);
 
-                            map<uint16_t, uint16_t>::iterator iter;
-                            iter = current_socket->missPoint.find(LastByteRcvd);
+                        map<uint16_t, uint16_t>::iterator iter;
+                        iter = current_socket->missPoint.find(LastByteRcvd);
 
-                            if(iter == current_socket->missPoint.end()) {
-                                current_socket->ackNum = (current_socket->ackNum + tcp_data_length) & 0xFFFFFFFF;
-                                current_socket->endPoint = (current_socket->endPoint + tcp_data_length) % BUFFERSIZE;
-                                current_socket->LastByteRcvd = (current_socket->LastByteRcvd + tcp_data_length) % BUFFERSIZE;
-                            } else if(iter->second == LastByteRcvd + tcp_data_length) {
-                                current_socket->ackNum = (current_socket->ackNum + current_socket->endPoint - LastByteRcvd) & 0xFFFFFFFF;
-                                current_socket->LastByteRcvd = (current_socket->LastByteRcvd + current_socket->endPoint) % BUFFERSIZE;
-                                current_socket->missPoint.erase(iter);
-                            } else if(iter->second > LastByteRcvd + tcp_data_length) {
-                                current_socket->ackNum = (current_socket->ackNum + tcp_data_length) & 0XFFFFFFFF;
-                                current_socket->LastByteRcvd = (current_socket->LastByteRcvd + tcp_data_length) % BUFFERSIZE;
-
-                                uint16_t iterEnd = iter->second;
-                                current_socket->missPoint.erase(iter);
-                                current_socket->missPoint.insert(pair<uint16_t, uint16_t>(LastByteRcvd + tcp_data_length, iterEnd));
+                        if(iter == current_socket->missPoint.end()) {
+                            current_socket->ackNum = (current_socket->ackNum + tcp_data_length) & 0xFFFFFFFF;
+                            current_socket->endPoint = overflow(current_socket->endPoint + tcp_data_length);
+                            current_socket->LastByteRcvd = overflow(current_socket->LastByteRcvd + tcp_data_length);
+                        } else if(iter->second == LastByteRcvd + tcp_data_length) {
+                            uint16_t gap;
+                            
+                            map<uint16_t, uint16_t>::iterator iter2;
+                            iter2 = std::next(iter, 1);
+                            if (iter2 != current_socket->missPoint.end()) {
+                                gap = iter2->first - LastByteRcvd;
+                            } else {
+                                gap = current_socket->endPoint - LastByteRcvd;
                             }
+                            
+                            current_socket->ackNum = (current_socket->ackNum + gap) & 0xFFFFFFFF;
+                            current_socket->LastByteRcvd = overflow(current_socket->LastByteRcvd + gap);
+                            current_socket->missPoint.erase(iter);
+                        } else if(iter->second > LastByteRcvd + tcp_data_length) {
+                            current_socket->ackNum = (current_socket->ackNum + tcp_data_length) & 0XFFFFFFFF;
+                            current_socket->LastByteRcvd = overflow(current_socket->LastByteRcvd + tcp_data_length);
+
+                            uint16_t iterEnd = iter->second;
+                            current_socket->missPoint.erase(iter);
+                            current_socket->missPoint.insert(pair<uint16_t, uint16_t>(LastByteRcvd + tcp_data_length, iterEnd));
                         }
                     }
                     //cout <<"3\n";
                     uint32_t send_seq_number = current_socket->seqNum;
                     uint32_t send_ack_number = current_socket->ackNum;
+                    //cout << "LastByteRcvd: " << current_socket->LastByteRcvd << endl;
+                    uint16_t using_buffer = usingBuffer(current_socket->LastByteRead, current_socket->LastByteRcvd);
                     makeTCPHeader(&my_packet_header, tcp_header.destPort, tcp_header.srcPort,
-                            send_seq_number, send_ack_number, ACK, WINDOWSIZE - current_socket->LastByteRcvd);
+                            send_seq_number, send_ack_number, ACK, BUFFERSIZE - using_buffer);
 
                    // checksum
                     uint16_t checksum = calculateChecksum(src_ip, dest_ip, (uint8_t*)&my_packet_header, (uint16_t)20);
@@ -883,6 +1083,21 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
                     ack_packet->writeData(34, &my_packet_header, 20);
                     // send packet
                     this->sendPacket("IPv4", ack_packet);
+                    this->freePacket(my_packet);
+
+                    if (current_socket->readUUID != 0) {
+                        //cout << "Hi\n";
+                        if (using_buffer <= current_socket->read_length) {
+                            read_memcpy(current_socket->read_pointer, current_socket->receive_buffer, using_buffer, BUFFERSIZE, current_socket->LastByteRead);
+                            current_socket->LastByteRead = overflow(current_socket->LastByteRead + using_buffer);
+                            this->returnSystemCall(current_socket->readUUID, (int) using_buffer);
+                        } else {
+                            read_memcpy(current_socket->read_pointer, current_socket->receive_buffer, current_socket->read_length, BUFFERSIZE, current_socket->LastByteRead);
+                            current_socket->LastByteRead = overflow(current_socket->LastByteRead + current_socket->read_length);
+                            this->returnSystemCall(current_socket->readUUID, current_socket->read_length);
+                        }
+                        current_socket->readUUID = 0;
+                    }
                 }
             }
             break;
@@ -978,7 +1193,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
                 // store our key in new pointer and put it in payload for addTimer
                 uint64_t* timerKey = new uint64_t;
                 *timerKey = key;
-                current_socket->timerUUID = TimerModule::addTimer(timerKey, current_time + (Time)1000000000);
+                current_socket->timerUUID = TimerModule::addTimer(timerKey, current_time + (Time)DEFAULT_TIME_WAIT);
             } else if (current_socket->state == static_cast<int> (STATE::FIN_WAIT_1)) {
                 current_socket->state = CLOSING;
                 this->sendPacket("IPv4", my_packet);
@@ -988,12 +1203,18 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
         // FIN_ACK packet
         case(0x11):
         {
-    		// reject packet if it's state is not SYN_SENT
-    		if (current_socket->state != static_cast<int> (FIN_WAIT_1)) {
-    			this->freePacket(packet);
-    			this->freePacket(my_packet);
-    			return;
-    		}
+            this->cancelTimer(current_socket->timerUUID);
+            current_socket->timerUUID = 0;
+            this->freePacket(current_socket->FIN_packet);
+            current_socket->FIN_packet = NULL;
+
+
+    		// reject packet if it's state is not FIN_WAIT_1
+            if (current_socket->state != static_cast<int> (FIN_WAIT_1)) {
+                this->freePacket(packet);
+                this->freePacket(my_packet);
+                return;
+            }
     		/*
     			send ACK packet
     			with ack_number
@@ -1011,7 +1232,7 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
             // write packet
             my_packet->writeData(14 + 20, &my_packet_header, 20);
             // change state
-    		current_socket->state = TIME_WAIT;
+            current_socket->state = TIME_WAIT;
             // send packet
             this->sendPacket("IPv4", my_packet);
 
@@ -1020,10 +1241,10 @@ void TCPAssignment::packetArrived(std::string fromModule, Packet* packet)
             // store our key in new pointer and put it in payload for addTimer
             uint64_t* timerKey = new uint64_t;
             *timerKey = key;
-            current_socket->timerUUID = TimerModule::addTimer(timerKey, current_time + (Time)1000000000);
+            current_socket->timerUUID = TimerModule::addTimer(timerKey, current_time + (Time)DEFAULT_TIME_WAIT);
         }
-        this->freePacket(my_packet);
     }
+    this->freePacket(packet);
 }
 
 void TCPAssignment::syscall_getpeername(UUID syscallUUID, int pid, int param1,
@@ -1066,6 +1287,7 @@ void TCPAssignment::syscall_getpeername(UUID syscallUUID, int pid, int param1,
 void TCPAssignment::syscall_write(UUID syscallUUID, int pid, int param1, void* param2, int param3)
 {
     //cout << "write!!!\n";
+    //cout << "param3: " << param3 << endl;
 
     uint64_t key = makePidFdKey(pid, param1);
     // find corresponding socket
@@ -1086,6 +1308,7 @@ void TCPAssignment::syscall_write(UUID syscallUUID, int pid, int param1, void* p
     */
 
     if (iter == socket_info_map.end()) {
+        //cout << "no socket!!!!\n";
         this->returnSystemCall(syscallUUID, -1);
         return;
     }
@@ -1103,11 +1326,11 @@ void TCPAssignment::syscall_write(UUID syscallUUID, int pid, int param1, void* p
     //cout << "first character: " << param2[0] << endl;
     int sent_byte = write(syscallUUID, key, buffer, param3);
     //cout << "bye\n";
+    //cout << "sent_byte!: " << sent_byte << endl;
     if (sent_byte == -1) {
         //cout << "damm\n";
         return;
     }
-    //cout << "sent_byte!: " << sent_byte << endl;
  
     this->returnSystemCall(syscallUUID, sent_byte);
     return; 
@@ -1118,20 +1341,21 @@ int TCPAssignment::write(UUID syscallUUID, uint64_t key, uint8_t* buffer, int le
     iter = socket_info_map.find(key);
     struct socket_info * current_socket = iter->second;
 
-    //cout << "buffer address after write func: " << buffer << endl;
+    //cout << "buffer address aSfter write func: " << buffer << endl;
     //cout << "first character: " << buffer[0] << endl;
 
-    current_socket->writeUUID = -1;
     uint32_t dest_ip = current_socket->destIP;
     uint32_t source_ip = current_socket->srcIP;
     uint16_t using_buffer = usingBuffer(current_socket->LastByteAcked, current_socket->LastByteSent);
     uint16_t remaining_buffer = BUFFERSIZE - using_buffer;
 
-    int interface = getHost()->getRoutingTable((const uint8_t *)&dest_ip);
-    if (!getHost()->getIPAddr((uint8_t *)&source_ip, interface)) {
-        //cout << "111\n";
-        this->returnSystemCall(syscallUUID, -1);
-        return -1;
+    if (syscallUUID != 0) {
+        int interface = getHost()->getRoutingTable((const uint8_t *)&dest_ip);
+        if (!getHost()->getIPAddr((uint8_t *)&source_ip, interface)) {
+            //cout << "111\n";
+            this->returnSystemCall(syscallUUID, -1);
+            return -1;
+        }
     }
 
     // byte we need to write
@@ -1141,9 +1365,10 @@ int TCPAssignment::write(UUID syscallUUID, uint64_t key, uint8_t* buffer, int le
     // when we need to block write call
     //cout << "rwnd: " << current_socket->rwnd << endl;
     //cout << "using_buffer: " << using_buffer << endl;
+    //cout << "cwnd: " << current_socket->cwnd << endl;
     //cout << "remaining_buffer: " << remaining_buffer << endl;
     //cout << "length: " << length << endl;
-    if (using_buffer >= current_socket->rwnd || remaining_buffer == 0) {
+    if (using_buffer >= std::min((int)current_socket->rwnd, (int)current_socket->cwnd) || remaining_buffer == 0) {
         //cout << "222\n";
         current_socket->writeUUID = syscallUUID;
         current_socket->write_pointer = buffer;
@@ -1153,6 +1378,7 @@ int TCPAssignment::write(UUID syscallUUID, uint64_t key, uint8_t* buffer, int le
 
     write_byte = std::min((int)(current_socket->rwnd - using_buffer), (int)remaining_buffer);
     write_byte = std::min((int)write_byte, (int)length);
+    write_byte = std::min((int)(current_socket->cwnd - using_buffer), (int)write_byte);
 
     while (write_byte > 0) {
         //cout << "write_byte: " << write_byte << endl;
@@ -1162,7 +1388,7 @@ int TCPAssignment::write(UUID syscallUUID, uint64_t key, uint8_t* buffer, int le
             //cout << "LastByteSent1: " << current_socket->LastByteSent << endl;
             write_memcpy(current_socket->send_buffer, buffer+sent_byte, MSS, BUFFERSIZE, current_socket->LastByteSent);
             // encapsulate that data and send it
-            data_send(MSS, current_socket->LastByteSent, key);
+            data_send(MSS, current_socket->LastByteSent, key, 0);
             write_byte -= MSS;
             sent_byte += MSS;
             //cout << "sent!\n";
@@ -1172,7 +1398,7 @@ int TCPAssignment::write(UUID syscallUUID, uint64_t key, uint8_t* buffer, int le
             //cout << "LastByteSent2: " << current_socket->LastByteSent << endl;
             write_memcpy(current_socket->send_buffer, buffer+sent_byte, write_byte, BUFFERSIZE, current_socket->LastByteSent);
             // encapsulate that data and send it
-            data_send(write_byte, current_socket->LastByteSent, key);
+            data_send(write_byte, current_socket->LastByteSent, key, 0);
             sent_byte += write_byte;
             write_byte = 0;
         }
@@ -1180,14 +1406,27 @@ int TCPAssignment::write(UUID syscallUUID, uint64_t key, uint8_t* buffer, int le
     //cout << "LastByteAcked: " << current_socket->LastByteAcked << endl;
     //cout << "LastByteSent: " << current_socket->LastByteSent << endl;
     //cout << "sent length: " << sent_byte << endl;
+    //cout << "timerUUID: " << current_socket->timerUUID << endl;
+    if (sent_byte > 0) {
+        if (current_socket->timerUUID == 0) {
+            // set timer
+            //Time current_time = this->getHost()->getSystem()->getCurrentTime();
+            // store our key in new pointer and put it in payload for addTimer
+            uint64_t* timerKey = new uint64_t;
+            *timerKey = key;
+            current_socket->timerUUID = addTimer(timerKey, (Time) DEFAULT_RTT);
+        } 
+    }
 
     return sent_byte;
-
 }
 
 // send data with length
-void TCPAssignment::data_send(int length, uint16_t offset, uint64_t key) {
+void TCPAssignment::data_send(int length, uint16_t offset, uint64_t key, int mode) {
     //cout << "data_send!!\n";
+    // mode 0 : normal case
+    // mode 1 : retransmit case
+    //cout << "mode: " << mode << endl;
 
     map<uint64_t, struct socket_info *>::iterator iter;
     iter = socket_info_map.find(key);
@@ -1199,12 +1438,27 @@ void TCPAssignment::data_send(int length, uint16_t offset, uint64_t key) {
     uint32_t dest_ip = current_socket->destIP;
 
     Packet *myPacket = allocatePacket(54+length);
-
-    makeTCPHeader(&TCPHeader, current_socket->srcPort, current_socket->destPort, current_socket->seqNum,
+    if (mode == 0) {
+        makeTCPHeader(&TCPHeader, current_socket->srcPort, current_socket->destPort, current_socket->seqNum,
         current_socket->ackNum, ACK, WINDOWSIZE);
+    } else {
+        makeTCPHeader(&TCPHeader, current_socket->srcPort, current_socket->destPort, current_socket->seqNumForRT,
+        current_socket->ackNum, ACK, WINDOWSIZE);
+    }
+
     memcpy(tcp_packet, &TCPHeader, 20);
-    memcpy(tcp_packet+20, current_socket->send_buffer+offset, length);
-    current_socket->seqNum = (current_socket->seqNum + length) & 0xFFFFFFFF;
+    read_memcpy(tcp_packet+20, current_socket->send_buffer, length, BUFFERSIZE, offset);
+    //read_memcpy(param2, current_socket->receive_buffer, param3, BUFFERSIZE, current_socket->LastByteRead)
+    //memcpy(tcp_packet+20, current_socket->send_buffer+offset, length);
+
+    //cout << "current_socket->seqNum: " << current_socket->seqNum << endl;
+    if (mode == 0) {
+        current_socket->seqNum = (current_socket->seqNum + length) & 0xFFFFFFFF;
+    } else {
+        current_socket->seqNumForRT = (current_socket->seqNumForRT + length) & 0xFFFFFFFF;
+    }
+    //cout << "current_socket->seqNum: " << current_socket->seqNum << endl;
+    
     uint16_t checksum = calculateChecksum(source_ip, dest_ip, tcp_packet, 20+length);
     checksum = htons(checksum);
     // allocate checksum
@@ -1215,9 +1469,11 @@ void TCPAssignment::data_send(int length, uint16_t offset, uint64_t key) {
     myPacket->writeData(14+16, &dest_ip, 4);
     myPacket->writeData(14+20, tcp_packet, 20+length);
     // send packet
-    sendPacket("IPv4", myPacket);
+    this->sendPacket("IPv4", myPacket);
     //this->freePacket(myPacket);
-    current_socket->LastByteSent = (current_socket->LastByteSent + length) % BUFFERSIZE;
+    if (mode == 0) {
+        current_socket->LastByteSent = overflow(current_socket->LastByteSent + length);
+    } 
     
     return;
 }
@@ -1256,12 +1512,12 @@ void TCPAssignment::syscall_read(UUID syscallUUID, int pid, int param1, uint8_t*
         return;
     } else if(using_buffer < param3) {
         read_memcpy(param2, current_socket->receive_buffer, using_buffer, BUFFERSIZE, current_socket->LastByteRead);
-        current_socket->LastByteRead = (current_socket->LastByteRead + using_buffer) % BUFFERSIZE;
+        current_socket->LastByteRead = overflow(current_socket->LastByteRead + using_buffer);
         this->returnSystemCall(syscallUUID, (int) using_buffer);
         //cout << "sent byte: " << using_buffer << endl;
     } else {
         read_memcpy(param2, current_socket->receive_buffer, param3, BUFFERSIZE, current_socket->LastByteRead);
-        current_socket->LastByteRead = (current_socket->LastByteRead + param3) % BUFFERSIZE;
+        current_socket->LastByteRead = overflow(current_socket->LastByteRead + param3);
         this->returnSystemCall(syscallUUID, param3);
         //cout << "sent byte: " << param3 << endl;
     }
@@ -1311,6 +1567,7 @@ void TCPAssignment::makeTCPHeader(struct tcp_header *TCPHeader, uint16_t srcPort
 
 void TCPAssignment::timerCallback(void* payload)
 {
+    //cout << "timerCallback!!!!\n";
     // get key from payload
     uint64_t *key_ptr = (uint64_t*) payload;
     uint64_t key = *key_ptr;
@@ -1323,8 +1580,8 @@ void TCPAssignment::timerCallback(void* payload)
         return;
     }
     struct socket_info * current_socket = iter->second;
-
-    if(current_socket->state == static_cast<int>(STATE::TIME_WAIT)) {
+    //cout << "state: " << current_socket->state << endl;
+    if (current_socket->state == static_cast<int>(STATE::TIME_WAIT)) {
         current_socket->state = CLOSED;
 
         // remove filedecriptor
@@ -1332,8 +1589,88 @@ void TCPAssignment::timerCallback(void* payload)
         //cout << "delete3\n";
         delete iter->second;
         socket_info_map.erase(iter);
-        free((uint64_t *) payload);
+    } else if (current_socket->state == static_cast<int>(STATE::SYN_SENT)) {
+        /*
+        cout << "num: " << current_socket->retransmitCount <<endl;
+        if (current_socket->retransmitCount == 10) {
+            this->freePacket(current_socket->SYN_packet);
+
+            current_socket->SYN_packet = NULL;
+            current_socket->retransmitCount = 0;
+            current_socket->timerUUID = 0;
+            free((uint64_t *) payload);
+
+            cout << "before returnSystemCall\n";
+            this->returnSystemCall(current_socket->connectUUID, -1);
+            return;
+        }
+        current_socket->retransmitCount++;*/
+
+        //cout << "retransmit SYN_packet\n";
+        Packet* retrans_packet = this->clonePacket(current_socket->SYN_packet);
+        // set timer
+        //Time current_time = this->getHost()->getSystem()->getCurrentTime();
+        // store our key in new pointer and put it in payload for addTimer
+        uint64_t* timerKey = new uint64_t;
+        *timerKey = key;
+        current_socket->CtimerUUID = TimerModule::addTimer(timerKey, (Time)DEFAULT_RTT);
+        // retransmit SYN_Packet
+        this->sendPacket("IPv4", retrans_packet);
+    } else if (current_socket->state == static_cast<int>(STATE::SYN_RCVD)) {
+        // for simultaneous case, we don't deal with it
+        if (current_socket->StimerUUID == 0) {
+            free((uint64_t *) payload);
+            return;
+        }
+        //cout << "retransmit SYN_ACK_packet\n";
+        Packet* retrans_packet = this->clonePacket(current_socket->SYN_ACK_packet);
+        // set timer
+        //Time current_time = this->getHost()->getSystem()->getCurrentTime();
+        // store our key in new pointer and put it in payload for addTimer
+        uint64_t* timerKey = new uint64_t;
+        *timerKey = key;
+        current_socket->StimerUUID = TimerModule::addTimer(timerKey, (Time)DEFAULT_RTT);
+        // retransmit SYN_Packet
+        this->sendPacket("IPv4", retrans_packet);
+    } else if (current_socket->state == static_cast<int>(STATE::FIN_WAIT_1) ||
+        current_socket->state == static_cast<int>(STATE::CLOSING) ||
+        current_socket->state == static_cast<int>(STATE::LAST_ACK)) {
+
+        //cout << "retransmit FIN_packet\n";
+
+        Packet* retrans_packet = this->clonePacket(current_socket->FIN_packet);
+        // set timer
+        //Time current_time = this->getHost()->getSystem()->getCurrentTime();
+        // store our key in new pointer and put it in payload for addTimer
+        uint64_t* timerKey = new uint64_t;
+        *timerKey = key;
+        current_socket->timerUUID = TimerModule::addTimer(timerKey, (Time)DEFAULT_RTT);
+        // retransmit SYN_packet
+        this->sendPacket("IPv4", retrans_packet);
+    } else if (current_socket->state == static_cast<int>(STATE::ESTABLISHED)) {
+        //cout << "asdf\n";
+        current_socket->duplicate = 0;
+        // cancel
+        this->cancelTimer(current_socket->timerUUID);
+        // retransmit
+        // need to change when congestion!!!!!
+        current_socket->cwnd = MSS;
+        current_socket->real_cwnd = MSS;
+        uint16_t sent_byte = retransmit(key);
+        //cout << "sent_byte: " << sent_byte << endl;
+        
+        
+        if (sent_byte > 0) {
+            if (current_socket->timerUUID == 0) {
+                // set timer
+                // store our key in new pointer and put it in payload for addTimer
+                uint64_t* timerKey = new uint64_t;
+                *timerKey = key;
+                current_socket->timerUUID = TimerModule::addTimer(timerKey, (Time)DEFAULT_RTT);
+            }
+        }
     }
+    free((uint64_t *) payload);
     return;
 }
 
@@ -1368,6 +1705,47 @@ void TCPAssignment::write_memcpy(uint8_t *dest, uint8_t *source, int length, uin
         memcpy(dest+offset, source, length);
     }
     return;
+}
+
+uint16_t TCPAssignment::retransmit(uint64_t key) {
+    //cout << "retransmit\n";
+    map<uint64_t, struct socket_info*>::iterator iter;
+    iter = socket_info_map.find(key);
+    struct socket_info * current_socket = iter->second;
+
+    current_socket->seqNumForRT = current_socket->sendBase;
+    //cout << "seqNumForRT: " << current_socket->seqNumForRT << endl;
+    //uint16_t rwnd = current_socket->rwnd;
+    uint16_t sent_byte = 0;
+    uint16_t using_buffer = usingBuffer(current_socket->LastByteAcked, current_socket->LastByteSent);
+    //uint16_t remaining_buffer = BUFFERSIZE - using_buffer;
+
+    uint16_t write_byte = std::min((int)(current_socket->rwnd), (int)using_buffer);
+    //cout << "write_byte: " << write_byte << endl;
+    while (write_byte > 0) {
+        //cout << "write_byte: " << write_byte << endl;
+        // write_byte is larger than MSS
+        if (write_byte >= MSS) {
+            // encapsulate that data and send it
+            data_send(MSS, current_socket->LastByteAcked, key, 1);
+            write_byte -= MSS;
+            sent_byte += MSS;
+        } else {
+            // last part for sending
+            // encapsulate that data and send it
+            data_send(write_byte, current_socket->LastByteAcked, key, 1);
+            sent_byte += write_byte;
+            write_byte = 0;
+        }
+    }
+    return sent_byte;
+}
+
+uint16_t TCPAssignment::overflow(uint16_t value) {
+    if (value > BUFFERSIZE) {
+        return value - BUFFERSIZE;
+    }
+    return value;
 }
 
 }
