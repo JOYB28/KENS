@@ -109,8 +109,6 @@ struct socket_info
 	int retransmitCount = 0;
 
 	struct accept_info* blocked_accept = NULL;
-	struct read_info* blocked_read = NULL;
-	struct write_info* blocked_write = NULL;
 
     // send buffer
     uint8_t send_buffer[BUFFERSIZE];
@@ -149,18 +147,6 @@ struct accept_info
 	int fd;
 	struct sockaddr* addr;
 	socklen_t* len;
-};
-// when read call is blocked
-struct read_info
-{
-	uint8_t* buffer;
-	int length;
-};
-// when write call is blocked
-struct write_info
-{
-	uint8_t* buffer;
-	int lenght;
 };
 
 // when write call is blocked
